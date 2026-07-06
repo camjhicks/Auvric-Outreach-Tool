@@ -4,24 +4,30 @@ import SearchBar from './SearchBar'
 import { updateLead, deleteLead } from '../services/leadStorage'
 import styles from './SavedLeadsScreen.module.css'
 
+const STATUS_OPTIONS = ['All', 'Not Emailed', 'Emailed']
+
 function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
 export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
   const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('All')
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return leads
-    return leads.filter(l =>
-      getDomain(l.websiteUrl).toLowerCase().includes(q) ||
-      (l.businessName ?? '').toLowerCase().includes(q) ||
-      (l.industry ?? '').toLowerCase().includes(q) ||
-      l.emailsFound.some(e => e.toLowerCase().includes(q)) ||
-      l.status.toLowerCase().includes(q)
-    )
-  }, [leads, query])
+    return leads.filter(l => {
+      const matchesStatus = statusFilter === 'All' || l.status === statusFilter
+      if (!matchesStatus) return false
+      if (!q) return true
+      return (
+        getDomain(l.websiteUrl).toLowerCase().includes(q) ||
+        (l.businessName ?? '').toLowerCase().includes(q) ||
+        (l.industry ?? '').toLowerCase().includes(q) ||
+        l.emailsFound.some(e => e.toLowerCase().includes(q))
+      )
+    })
+  }, [leads, query, statusFilter])
 
   function handleMarkEmailed(id) {
     onLeadsChange(updateLead(id, { status: 'Emailed' }))
@@ -43,8 +49,17 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
         </div>
       </div>
 
-      <div className={styles.searchWrapper}>
+      <div className={styles.filterRow}>
         <SearchBar value={query} onChange={setQuery} />
+        <select
+          className={styles.statusSelect}
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+        >
+          {STATUS_OPTIONS.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
       </div>
 
       {leads.length === 0 ? (
@@ -56,7 +71,7 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
       ) : filtered.length === 0 ? (
         <div className={styles.empty}>
           <span className={styles.emptyIcon}>⌕</span>
-          <p>No leads match your search.</p>
+          <p>No leads match your filters.</p>
         </div>
       ) : (
         <div className={styles.list}>

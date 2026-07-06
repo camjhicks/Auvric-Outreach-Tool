@@ -48,8 +48,32 @@
   color: var(--color-muted);
 }
 
-.searchWrapper {
-  /* keeps SearchBar full-width inside the column */
+.filterRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.filterRow > :first-child {
+  flex: 1;
+}
+
+.statusSelect {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.65rem 0.75rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.statusSelect:focus {
+  border-color: var(--color-primary);
 }
 
 .list {

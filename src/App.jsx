@@ -38,8 +38,10 @@ export default function App() {
     try {
       const data = await runAudit(fields)
       setAuditResult(data)
-      const n = incrementLeadsGenerated()
-      setLeadsGenerated(n)
+      if (!data.accessError) {
+        const n = incrementLeadsGenerated()
+        setLeadsGenerated(n)
+      }
     } catch (err) {
       setInputError(err.message)
     } finally {
