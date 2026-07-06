@@ -1,6 +1,16 @@
+import OutreachDraft from './OutreachDraft'
 import styles from './ResultsArea.module.css'
 
-export default function ResultsArea({ result, isLoading, onSave, isSaved }) {
+export default function ResultsArea({
+  result,
+  isLoading,
+  onSave,
+  isSaved,
+  onGenerateOutreach,
+  isGeneratingOutreach,
+  outreachDraft,
+  outreachError,
+}) {
   if (isLoading) {
     return (
       <section className={styles.container}>
@@ -67,6 +77,52 @@ export default function ResultsArea({ result, isLoading, onSave, isSaved }) {
                 {isSaved ? 'Saved ✓' : 'Save For Later'}
               </button>
             </div>
+          </>
+        )}
+
+        {!accessError && emails.length > 0 && (
+          <>
+            <hr className={styles.divider} />
+            <div className={styles.outreachRow}>
+              {!outreachDraft && (
+                <button
+                  className={`${styles.outreachBtn} ${isGeneratingOutreach ? styles.outreachBtnLoading : ''}`}
+                  onClick={onGenerateOutreach}
+                  disabled={isGeneratingOutreach}
+                >
+                  {isGeneratingOutreach ? (
+                    <>
+                      <span className={styles.outreachSpinner} />
+                      Generating Draft…
+                    </>
+                  ) : (
+                    'Generate Outreach Draft'
+                  )}
+                </button>
+              )}
+              {outreachError && (
+                <p className={styles.outreachError}>{outreachError}</p>
+              )}
+            </div>
+
+            {outreachDraft && (
+              <>
+                <hr className={styles.divider} />
+                <div className={styles.outreachDraftWrapper}>
+                  <OutreachDraft
+                    draft={outreachDraft}
+                    emailUsed={outreachDraft.emailUsed}
+                  />
+                  <button
+                    className={styles.regenerateBtn}
+                    onClick={onGenerateOutreach}
+                    disabled={isGeneratingOutreach}
+                  >
+                    {isGeneratingOutreach ? 'Regenerating…' : 'Regenerate'}
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

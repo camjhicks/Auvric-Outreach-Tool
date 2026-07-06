@@ -5,6 +5,8 @@ import ResultsArea from './components/ResultsArea'
 import StatsBar from './components/StatsBar'
 import SavedLeadsScreen from './components/SavedLeadsScreen'
 import { runAudit } from './services/auditApi'
+import { generateOutreach } from './services/outreachApi'
+import { getBestEmail } from './utils/bestEmail'
 import {
   getLeads,
   saveLead,
@@ -21,6 +23,10 @@ export default function App() {
   const [leads, setLeads] = useState(() => getLeads())
   const [leadsGenerated, setLeadsGenerated] = useState(() => getLeadsGenerated())
 
+  const [outreachDraft, setOutreachDraft] = useState(null)
+  const [isGeneratingOutreach, setIsGeneratingOutreach] = useState(false)
+  const [outreachError, setOutreachError] = useState(null)
+
   const stats = {
     generated: leadsGenerated,
     emailed: leads.filter(l => l.status === 'Emailed').length,
@@ -34,6 +40,8 @@ export default function App() {
   async function handleAudit(fields) {
     setInputError(null)
     setAuditResult(null)
+    setOutreachDraft(null)
+    setOutreachError(null)
     setIsLoading(true)
     try {
       const data = await runAudit(fields)
@@ -51,13 +59,35 @@ export default function App() {
 
   function handleSave() {
     if (!auditResult || isSaved) return
-    const { lead, leads: updated } = saveLead({
+    const { leads: updated } = saveLead({
       websiteUrl: auditResult.url,
       businessName: auditResult.businessName,
       industry: auditResult.industry,
       emailsFound: auditResult.emails,
     })
     setLeads(updated)
+  }
+
+  async function handleGenerateOutreach() {
+    if (!auditResult || isGeneratingOutreach) return
+    const email = getBestEmail(auditResult.emails)
+    if (!email) return
+
+    setOutreachError(null)
+    setIsGeneratingOutreach(true)
+    try {
+      const draft = await generateOutreach({
+        url: auditResult.url,
+        businessName: auditResult.businessName,
+        industry: auditResult.industry,
+        email,
+      })
+      setOutreachDraft({ ...draft, emailUsed: email })
+    } catch (err) {
+      setOutreachError(err.message)
+    } finally {
+      setIsGeneratingOutreach(false)
+    }
   }
 
   function handleLeadsChange(updatedLeads) {
@@ -89,6 +119,10 @@ export default function App() {
           isLoading={isLoading}
           onSave={handleSave}
           isSaved={isSaved}
+          onGenerateOutreach={handleGenerateOutreach}
+          isGeneratingOutreach={isGeneratingOutreach}
+          outreachDraft={outreachDraft}
+          outreachError={outreachError}
         />
       </main>
     </div>
