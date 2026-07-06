@@ -58,3 +58,20 @@
 .button:active {
   transform: scale(0.99);
 }
+
+.button:disabled {
+  background: #3a3d52;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #f87171;
+  font-size: 0.875rem;
+  margin-top: -0.5rem;
+}

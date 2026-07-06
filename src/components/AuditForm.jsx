@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import styles from './AuditForm.module.css'
 
-export default function AuditForm({ onAudit }) {
+export default function AuditForm({ onAudit, isLoading, inputError }) {
   const [fields, setFields] = useState({
     websiteUrl: '',
     businessName: '',
@@ -14,7 +14,7 @@ export default function AuditForm({ onAudit }) {
 
   function handleSubmit(e) {
     e.preventDefault()
-    onAudit(fields)
+    if (!isLoading) onAudit(fields)
   }
 
   return (
@@ -29,6 +29,7 @@ export default function AuditForm({ onAudit }) {
           placeholder="https://example.com"
           value={fields.websiteUrl}
           onChange={handleChange}
+          disabled={isLoading}
         />
       </div>
 
@@ -42,6 +43,7 @@ export default function AuditForm({ onAudit }) {
           placeholder="Sunrise Plumbing Co."
           value={fields.businessName}
           onChange={handleChange}
+          disabled={isLoading}
         />
       </div>
 
@@ -55,11 +57,14 @@ export default function AuditForm({ onAudit }) {
           placeholder="Plumbing, HVAC, Roofing…"
           value={fields.industry}
           onChange={handleChange}
+          disabled={isLoading}
         />
       </div>
 
-      <button type="submit" className={styles.button}>
-        Run Audit
+      {inputError && <p className={styles.error}>{inputError}</p>}
+
+      <button type="submit" className={styles.button} disabled={isLoading}>
+        {isLoading ? 'Auditing…' : 'Run Audit'}
       </button>
     </form>
   )
