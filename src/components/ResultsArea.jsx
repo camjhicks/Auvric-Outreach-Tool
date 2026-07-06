@@ -1,6 +1,6 @@
 import styles from './ResultsArea.module.css'
 
-export default function ResultsArea({ result, isLoading }) {
+export default function ResultsArea({ result, isLoading, onSave, isSaved }) {
   if (isLoading) {
     return (
       <section className={styles.container}>
@@ -53,6 +53,21 @@ export default function ResultsArea({ result, isLoading }) {
           </div>
         ) : (
           <p className={styles.noEmails}>No visible emails found on this website.</p>
+        )}
+
+        {!accessError && (
+          <>
+            <hr className={styles.divider} />
+            <div className={styles.saveRow}>
+              <button
+                className={`${styles.saveBtn} ${isSaved ? styles.saveBtnSaved : ''}`}
+                onClick={onSave}
+                disabled={isSaved}
+              >
+                {isSaved ? 'Saved ✓' : 'Save For Later'}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </section>

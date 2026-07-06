@@ -28,3 +28,21 @@
   color: var(--color-muted);
   font-size: 0.95rem;
 }
+
+.navBtn {
+  display: inline-block;
+  margin-top: 0.9rem;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.45rem 1rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.navBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}

@@ -1,0 +1,157 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Top section */
+.top {
+  padding: 1.1rem 1.25rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.domain {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.badgePending {
+  background: #1e2030;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+}
+
+.badgeEmailed {
+  background: #14301f;
+  color: #4ade80;
+  border: 1px solid #1f4a2c;
+}
+
+.metaLine {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.825rem;
+  color: var(--color-muted);
+  flex-wrap: wrap;
+}
+
+.dot {
+  color: var(--color-border);
+}
+
+/* Email block */
+.emailBlock {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.noEmail {
+  font-size: 0.825rem;
+  color: #4a4f66;
+  font-style: italic;
+}
+
+.bestRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.bestLabel {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  flex-shrink: 0;
+}
+
+.emailLink {
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.emailLink:hover {
+  text-decoration: underline;
+}
+
+.otherEmail {
+  color: #6a6f8a;
+}
+
+/* Footer */
+.footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.date {
+  font-size: 0.775rem;
+  color: #4a4f66;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.emailBtn,
+.deleteBtn {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: none;
+  transition: background 0.15s;
+}
+
+.emailBtn {
+  background: #1a2d40;
+  color: #60a5fa;
+}
+
+.emailBtn:hover {
+  background: #1e3450;
+}
+
+.deleteBtn {
+  background: #2d1a1a;
+  color: #f87171;
+}
+
+.deleteBtn:hover {
+  background: #3a1e1e;
+}
