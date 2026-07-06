@@ -18,10 +18,11 @@ router.post('/', async (req, res) => {
   const { system, user } = buildOutreachPrompt({ url, businessName, industry, email })
 
   try {
+    const model = process.env.OUTREACH_MODEL || 'claude-sonnet-4-5'
     const client = new Anthropic({ apiKey })
 
     const stream = await client.messages.stream({
-      model: 'claude-opus-4-8',
+      model,
       max_tokens: 1024,
       thinking: { type: 'adaptive' },
       system,
