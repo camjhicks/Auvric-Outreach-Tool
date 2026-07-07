@@ -39,6 +39,9 @@ function migrateLead(lead) {
     lastContactedAt: lead.lastContactedAt ?? null,
     nextFollowUpAt: lead.nextFollowUpAt ?? null,
     followUpCount: lead.followUpCount ?? 0,
+    leadScore: lead.leadScore ?? null,
+    leadPriority: lead.leadPriority ?? null,
+    scoreBreakdown: lead.scoreBreakdown ?? [],
   }
 }
 
@@ -63,6 +66,9 @@ export function saveLead({
   outreachDraft,
   outreachSubject,
   outreachCTA,
+  leadScore,
+  leadPriority,
+  scoreBreakdown,
 }) {
   const emails = emailsFound ?? []
   const lead = {
@@ -82,6 +88,9 @@ export function saveLead({
     lastContactedAt: null,
     nextFollowUpAt: null,
     followUpCount: 0,
+    leadScore: leadScore ?? null,
+    leadPriority: leadPriority ?? null,
+    scoreBreakdown: scoreBreakdown ?? [],
   }
   const leads = [lead, ...getLeads()]
   setLeads(leads)

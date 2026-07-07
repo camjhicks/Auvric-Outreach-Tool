@@ -33,7 +33,7 @@ export default function ResultsArea({
     )
   }
 
-  const { url, businessName, industry, emails, pagesChecked, auditNotes, accessError, accessErrorMessage } = result
+  const { url, businessName, industry, emails, pagesChecked, auditNotes, leadScore, leadPriority, scoreBreakdown, accessError, accessErrorMessage } = result
 
   return (
     <section className={styles.container}>
@@ -46,6 +46,13 @@ export default function ResultsArea({
             <MetaRow label="Pages Scanned" value={pagesChecked.length} />
           )}
         </div>
+
+        {leadScore != null && (
+          <>
+            <hr className={styles.divider} />
+            <ScoreSection score={leadScore} priority={leadPriority} breakdown={scoreBreakdown} />
+          </>
+        )}
 
         <hr className={styles.divider} />
 
@@ -161,6 +168,35 @@ function MetaRow({ label, value }) {
     <div className={styles.metaRow}>
       <span className={styles.metaLabel}>{label}</span>
       <span className={styles.metaValue}>{value}</span>
+    </div>
+  )
+}
+
+const PRIORITY_COLOR = {
+  'Strong Prospect': '#4ade80',
+  'Good Prospect':   '#60a5fa',
+  'Weak Prospect':   '#fb923c',
+  'Low Priority':    '#f87171',
+}
+
+function ScoreSection({ score, priority, breakdown }) {
+  const color = PRIORITY_COLOR[priority] ?? 'var(--color-muted)'
+  return (
+    <div className={styles.scoreSection}>
+      <div className={styles.scoreRow}>
+        <span className={styles.scoreNumber} style={{ color }}>{score}</span>
+        <span className={styles.scoreLabel} style={{ color, borderColor: color }}>
+          {priority}
+        </span>
+      </div>
+      <p className={styles.scoreCaption}>Lead Score / 100</p>
+      {breakdown.length > 0 && (
+        <ul className={styles.breakdownList}>
+          {breakdown.map((item, i) => (
+            <li key={i} className={styles.breakdownItem}>{item}</li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

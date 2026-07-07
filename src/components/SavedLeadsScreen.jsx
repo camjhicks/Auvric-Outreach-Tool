@@ -60,7 +60,8 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
         (l.industry ?? '').toLowerCase().includes(q) ||
         l.emailsFound.some(e => e.toLowerCase().includes(q)) ||
         (l.notes ?? '').toLowerCase().includes(q) ||
-        (l.outreachSubject ?? '').toLowerCase().includes(q)
+        (l.outreachSubject ?? '').toLowerCase().includes(q) ||
+        (l.leadPriority ?? '').toLowerCase().includes(q)
       )
     })
   }, [leads, query, statusFilter])

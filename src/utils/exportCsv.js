@@ -17,6 +17,9 @@ const HEADERS = [
   'Outreach Email',
   'Outreach CTA',
   'Notes',
+  'Lead Score',
+  'Lead Priority',
+  'Score Breakdown',
 ]
 
 function leadToRow(lead) {
@@ -28,11 +31,14 @@ function leadToRow(lead) {
     field((lead.emailsFound ?? []).join(' | ')),
     field(lead.status),
     field(lead.dateSaved ? new Date(lead.dateSaved).toLocaleDateString() : ''),
-    field(lead.auditNotes),
+    field(Array.isArray(lead.auditNotes) ? lead.auditNotes.join(' | ') : lead.auditNotes),
     field(lead.outreachSubject),
     field(lead.outreachDraft),
     field(lead.outreachCTA),
     field(lead.notes),
+    field(lead.leadScore),
+    field(lead.leadPriority),
+    field((lead.scoreBreakdown ?? []).join(' | ')),
   ].join(',')
 }
 

@@ -7,6 +7,22 @@ function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
+const PRIORITY_COLOR = {
+  'Strong Prospect': '#4ade80',
+  'Good Prospect':   '#60a5fa',
+  'Weak Prospect':   '#fb923c',
+  'Low Priority':    '#f87171',
+}
+
+function PriorityBadge({ priority, score }) {
+  const color = PRIORITY_COLOR[priority] ?? '#6b7280'
+  return (
+    <span className={styles.priorityBadge} style={{ color, borderColor: color }}>
+      {score != null ? `${score} · ` : ''}{priority}
+    </span>
+  )
+}
+
 const CONTACTED_AND_BEYOND = new Set([
   'Contacted', 'Replied', 'Meeting Scheduled', 'Proposal Sent', 'Closed Won', 'Closed Lost',
 ])
@@ -52,6 +68,10 @@ export default function LeadCard({ lead, onStatusChange, onNotesChange, onDelete
             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+
+        {lead.leadPriority && (
+          <PriorityBadge priority={lead.leadPriority} score={lead.leadScore} />
+        )}
 
         <div className={styles.metaLine}>
           {lead.businessName && <span>{lead.businessName}</span>}

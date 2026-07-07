@@ -47,6 +47,19 @@
   border-color: var(--color-primary);
 }
 
+.priorityBadge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  border: 1px solid;
+  background: transparent;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
 .metaLine {
   display: flex;
   align-items: center;

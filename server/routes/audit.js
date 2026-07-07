@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { normalizeUrl } from '../utils/normalizeUrl.js'
 import { crawlContactPages } from '../utils/crawlContactPages.js'
 import { generateAuditNotes } from '../utils/generateAuditNotes.js'
+import { calculateLeadScore } from '../utils/calculateLeadScore.js'
 
 const router = Router()
 const FETCH_TIMEOUT_MS = 10_000
@@ -28,7 +29,8 @@ router.post('/', async (req, res) => {
     clearTimeout(timer)
 
     if (!response.ok) {
-      return res.json({ url, businessName, industry, emails: [], pagesChecked: [], accessError: true })
+      const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails: [], auditNotes: [], accessError: true })
+      return res.json({ url, businessName, industry, emails: [], pagesChecked: [], accessError: true, leadScore, leadPriority, scoreBreakdown })
     }
 
     finalUrl = response.url || url
@@ -50,7 +52,8 @@ router.post('/', async (req, res) => {
 
   const { emails, pagesChecked } = await crawlContactPages(finalUrl, html)
   const auditNotes = generateAuditNotes(html)
-  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked, auditNotes })
+  const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails, auditNotes, accessError: false })
+  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked, auditNotes, leadScore, leadPriority, scoreBreakdown })
 })
 
 export default router

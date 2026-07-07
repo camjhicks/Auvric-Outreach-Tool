@@ -71,6 +71,9 @@ export default function App() {
       outreachDraft: outreachDraft?.body ?? null,
       outreachSubject: outreachDraft?.subject ?? null,
       outreachCTA: outreachDraft?.cta ?? null,
+      leadScore: auditResult.leadScore ?? null,
+      leadPriority: auditResult.leadPriority ?? null,
+      scoreBreakdown: auditResult.scoreBreakdown ?? [],
     })
     setLeads(updated)
   }
