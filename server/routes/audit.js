@@ -1,11 +1,8 @@
 import { Router } from 'express'
 import { normalizeUrl } from '../utils/normalizeUrl.js'
-import { crawlContactPages } from '../utils/crawlContactPages.js'
-import { generateAuditNotes } from '../utils/generateAuditNotes.js'
-import { calculateLeadScore } from '../utils/calculateLeadScore.js'
+import { auditWebsite } from '../services/auditWebsite.js'
 
 const router = Router()
-const FETCH_TIMEOUT_MS = 10_000
 
 router.post('/', async (req, res) => {
   const { websiteUrl, businessName = '', industry = '' } = req.body ?? {}
@@ -15,49 +12,22 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Please enter a valid website URL.' })
   }
 
-  let html
-  let finalUrl = url
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const result = await auditWebsite(url)
 
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AuvricScout/1.0; +https://auvric.com)' },
-      redirect: 'follow',
-    })
-    clearTimeout(timer)
-
-    if (!response.ok) {
-      const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails: [], auditNotes: [], accessError: true })
-      return res.json({ url, businessName, industry, emails: [], pagesChecked: [], accessError: true, leadScore, leadPriority, scoreBreakdown })
-    }
-
-    finalUrl = response.url || url
-    html = await response.text()
-  } catch (err) {
-    const isTimeout = err.name === 'AbortError'
-    const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails: [], auditNotes: [], accessError: true })
-    return res.json({
-      url,
-      businessName,
-      industry,
-      emails: [],
-      pagesChecked: [],
-      accessError: true,
-      accessErrorMessage: isTimeout
-        ? 'Request timed out — the site took too long to respond.'
-        : 'Unable to access this website right now.',
-      leadScore,
-      leadPriority,
-      scoreBreakdown,
-    })
-  }
-
-  const { emails, pagesChecked } = await crawlContactPages(finalUrl, html)
-  const auditNotes = generateAuditNotes(html)
-  const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails, auditNotes, accessError: false })
-  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked, auditNotes, leadScore, leadPriority, scoreBreakdown })
+  // Map service shape → existing frontend shape (backwards-compatible)
+  return res.json({
+    url: result.normalizedUrl,
+    businessName,
+    industry,
+    emails: result.emailsFound,
+    pagesChecked: result.pagesChecked,
+    accessError: result.accessError,
+    ...(result.errorMessage ? { accessErrorMessage: result.errorMessage } : {}),
+    auditNotes: result.auditNotes,
+    leadScore: result.leadScore,
+    leadPriority: result.leadPriority,
+    scoreBreakdown: result.scoreBreakdown,
+  })
 })
 
 export default router
