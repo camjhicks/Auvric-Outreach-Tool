@@ -252,3 +252,49 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* Audit notes */
+.auditNotes {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.auditNotesHeading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.auditNotesList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.auditNoteItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.auditNoteDot {
+  flex-shrink: 0;
+  margin-top: 0.45em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fb923c;
+}
+
+.auditNotesClean {
+  font-size: 0.875rem;
+  color: #4ade80;
+}

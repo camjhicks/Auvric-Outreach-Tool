@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { normalizeUrl } from '../utils/normalizeUrl.js'
 import { crawlContactPages } from '../utils/crawlContactPages.js'
+import { generateAuditNotes } from '../utils/generateAuditNotes.js'
 
 const router = Router()
 const FETCH_TIMEOUT_MS = 10_000
@@ -48,7 +49,8 @@ router.post('/', async (req, res) => {
   }
 
   const { emails, pagesChecked } = await crawlContactPages(finalUrl, html)
-  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked })
+  const auditNotes = generateAuditNotes(html)
+  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked, auditNotes })
 })
 
 export default router

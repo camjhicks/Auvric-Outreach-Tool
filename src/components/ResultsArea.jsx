@@ -33,7 +33,7 @@ export default function ResultsArea({
     )
   }
 
-  const { url, businessName, industry, emails, pagesChecked, accessError, accessErrorMessage } = result
+  const { url, businessName, industry, emails, pagesChecked, auditNotes, accessError, accessErrorMessage } = result
 
   return (
     <section className={styles.container}>
@@ -66,6 +66,29 @@ export default function ResultsArea({
           </div>
         ) : (
           <p className={styles.noEmails}>No visible emails found on this website.</p>
+        )}
+
+        {!accessError && auditNotes != null && (
+          <>
+            <hr className={styles.divider} />
+            <div className={styles.auditNotes}>
+              <p className={styles.auditNotesHeading}>Website Audit Notes</p>
+              {auditNotes.length === 0 ? (
+                <p className={styles.auditNotesClean}>
+                  No major visible website issues detected from the homepage scan.
+                </p>
+              ) : (
+                <ul className={styles.auditNotesList}>
+                  {auditNotes.map((note, i) => (
+                    <li key={i} className={styles.auditNoteItem}>
+                      <span className={styles.auditNoteDot} />
+                      {note}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
         )}
 
         {!accessError && (
