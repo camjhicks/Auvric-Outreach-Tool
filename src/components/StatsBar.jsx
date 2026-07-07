@@ -1,10 +1,11 @@
 import styles from './StatsBar.module.css'
 
-export default function StatsBar({ stats = { generated: 0, contacted: 0, saved: 0 } }) {
+export default function StatsBar({ stats = { generated: 0, contacted: 0, saved: 0, followUpsDue: 0 } }) {
   const items = [
     { label: 'Leads Generated', value: stats.generated },
     { label: 'Leads Contacted', value: stats.contacted },
-    { label: 'Leads Currently Saved', value: stats.saved },
+    { label: 'Leads Saved', value: stats.saved },
+    { label: 'Follow-Ups Due', value: stats.followUpsDue },
   ]
 
   return (

@@ -4,6 +4,7 @@ import LeadDetailsScreen from './LeadDetailsScreen'
 import SearchBar from './SearchBar'
 import { updateLead, deleteLead, STATUS_OPTIONS } from '../services/leadStorage'
 import { downloadLeadsCSV } from '../utils/exportCsv'
+import { getFollowUpUpdate } from '../utils/followUp'
 import styles from './SavedLeadsScreen.module.css'
 
 const FILTER_OPTIONS = ['All', ...STATUS_OPTIONS]
@@ -20,7 +21,12 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
   const selectedLead = selectedLeadId ? leads.find(l => l.id === selectedLeadId) : null
 
   function handleStatusChange(id, status) {
-    onLeadsChange(updateLead(id, { status }))
+    const lead = leads.find(l => l.id === id)
+    const updates = { status }
+    if (status === 'Contacted' && lead) {
+      Object.assign(updates, getFollowUpUpdate(lead))
+    }
+    onLeadsChange(updateLead(id, updates))
   }
 
   function handleNotesChange(id, notes) {

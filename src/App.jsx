@@ -4,9 +4,11 @@ import AuditForm from './components/AuditForm'
 import ResultsArea from './components/ResultsArea'
 import StatsBar from './components/StatsBar'
 import SavedLeadsScreen from './components/SavedLeadsScreen'
+import FollowUpQueueScreen from './components/FollowUpQueueScreen'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
 import { getBestEmail } from './utils/bestEmail'
+import { isFollowUpDue } from './utils/followUp'
 import {
   getLeads,
   saveLead,
@@ -16,7 +18,7 @@ import {
 import styles from './App.module.css'
 
 export default function App() {
-  const [screen, setScreen] = useState('audit') // 'audit' | 'leads'
+  const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue'
   const [auditResult, setAuditResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [inputError, setInputError] = useState(null)
@@ -31,6 +33,7 @@ export default function App() {
     generated: leadsGenerated,
     contacted: leads.filter(l => l.status === 'Contacted').length,
     saved: leads.length,
+    followUpsDue: leads.filter(isFollowUpDue).length,
   }
 
   const isSaved = auditResult
@@ -101,7 +104,7 @@ export default function App() {
   if (screen === 'leads') {
     return (
       <div className={styles.app}>
-        <Header />
+        <Header onViewQueue={() => setScreen('queue')} />
         <StatsBar stats={stats} />
         <SavedLeadsScreen
           leads={leads}
@@ -112,9 +115,26 @@ export default function App() {
     )
   }
 
+  if (screen === 'queue') {
+    return (
+      <div className={styles.app}>
+        <Header onViewLeads={() => setScreen('leads')} />
+        <StatsBar stats={stats} />
+        <FollowUpQueueScreen
+          leads={leads}
+          onBack={() => setScreen('audit')}
+          onLeadsChange={handleLeadsChange}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={styles.app}>
-      <Header onViewLeads={() => setScreen('leads')} />
+      <Header
+        onViewLeads={() => setScreen('leads')}
+        onViewQueue={() => setScreen('queue')}
+      />
       <StatsBar stats={stats} />
       <main className={styles.main}>
         <AuditForm onAudit={handleAudit} isLoading={isLoading} inputError={inputError} />

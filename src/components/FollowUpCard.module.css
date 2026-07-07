@@ -1,0 +1,140 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.top {
+  padding: 1rem 1.25rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.domain {
+  font-size: 0.975rem;
+  font-weight: 700;
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.followUpBadge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 20px;
+  background: #1a1f35;
+  color: #818cf8;
+  border: 1px solid #2e3460;
+  white-space: nowrap;
+}
+
+.bizName {
+  font-size: 0.825rem;
+  color: var(--color-muted);
+}
+
+.email {
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.email:hover {
+  text-decoration: underline;
+}
+
+.noEmail {
+  font-size: 0.825rem;
+  color: #4a4f66;
+  font-style: italic;
+}
+
+/* Meta grid */
+.meta {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.metaRow {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.825rem;
+}
+
+.metaLabel {
+  color: var(--color-muted);
+  min-width: 110px;
+  flex-shrink: 0;
+}
+
+.metaValue {
+  color: var(--color-text);
+}
+
+.dueDate {
+  color: #fb923c;
+  font-weight: 600;
+}
+
+/* Footer */
+.footer {
+  padding: 0.65rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.detailsBtn,
+.doneBtn,
+.dismissBtn {
+  font-size: 0.775rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  border: none;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.detailsBtn {
+  background: #1a1f35;
+  color: #818cf8;
+}
+
+.detailsBtn:hover {
+  background: #1e2540;
+}
+
+.doneBtn {
+  background: #14301f;
+  color: #4ade80;
+}
+
+.doneBtn:hover {
+  background: #183826;
+}
+
+.dismissBtn {
+  background: #1e2030;
+  color: var(--color-muted);
+}
+
+.dismissBtn:hover {
+  background: #242638;
+}

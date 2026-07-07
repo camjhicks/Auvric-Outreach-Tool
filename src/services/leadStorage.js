@@ -36,6 +36,9 @@ function migrateLead(lead) {
     outreachCTA: lead.outreachCTA ?? null,
     status,
     notes: lead.notes ?? '',
+    lastContactedAt: lead.lastContactedAt ?? null,
+    nextFollowUpAt: lead.nextFollowUpAt ?? null,
+    followUpCount: lead.followUpCount ?? 0,
   }
 }
 
@@ -76,6 +79,9 @@ export function saveLead({
     outreachCTA: outreachCTA ?? null,
     status: outreachDraft ? 'Draft Generated' : 'New',
     notes: '',
+    lastContactedAt: null,
+    nextFollowUpAt: null,
+    followUpCount: 0,
   }
   const leads = [lead, ...getLeads()]
   setLeads(leads)
