@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { normalizeUrl } from '../utils/normalizeUrl.js'
-import { extractEmails } from '../utils/extractEmails.js'
+import { crawlContactPages } from '../utils/crawlContactPages.js'
 
 const router = Router()
 const FETCH_TIMEOUT_MS = 10_000
@@ -14,6 +14,7 @@ router.post('/', async (req, res) => {
   }
 
   let html
+  let finalUrl = url
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
@@ -26,9 +27,10 @@ router.post('/', async (req, res) => {
     clearTimeout(timer)
 
     if (!response.ok) {
-      return res.json({ url, businessName, industry, emails: [], accessError: true })
+      return res.json({ url, businessName, industry, emails: [], pagesChecked: [], accessError: true })
     }
 
+    finalUrl = response.url || url
     html = await response.text()
   } catch (err) {
     const isTimeout = err.name === 'AbortError'
@@ -37,6 +39,7 @@ router.post('/', async (req, res) => {
       businessName,
       industry,
       emails: [],
+      pagesChecked: [],
       accessError: true,
       accessErrorMessage: isTimeout
         ? 'Request timed out — the site took too long to respond.'
@@ -44,8 +47,8 @@ router.post('/', async (req, res) => {
     })
   }
 
-  const emails = extractEmails(html)
-  return res.json({ url, businessName, industry, emails })
+  const { emails, pagesChecked } = await crawlContactPages(finalUrl, html)
+  return res.json({ url: finalUrl, businessName, industry, emails, pagesChecked })
 })
 
 export default router

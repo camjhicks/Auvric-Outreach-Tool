@@ -33,7 +33,7 @@ export default function ResultsArea({
     )
   }
 
-  const { url, businessName, industry, emails, accessError, accessErrorMessage } = result
+  const { url, businessName, industry, emails, pagesChecked, accessError, accessErrorMessage } = result
 
   return (
     <section className={styles.container}>
@@ -42,6 +42,9 @@ export default function ResultsArea({
           <MetaRow label="URL" value={url} />
           {businessName && <MetaRow label="Business" value={businessName} />}
           {industry && <MetaRow label="Industry" value={industry} />}
+          {pagesChecked && pagesChecked.length > 0 && (
+            <MetaRow label="Pages Scanned" value={pagesChecked.length} />
+          )}
         </div>
 
         <hr className={styles.divider} />
