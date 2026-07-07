@@ -29,7 +29,7 @@ export default function App() {
 
   const stats = {
     generated: leadsGenerated,
-    emailed: leads.filter(l => l.status === 'Emailed').length,
+    contacted: leads.filter(l => l.status === 'Contacted').length,
     saved: leads.length,
   }
 
@@ -64,6 +64,10 @@ export default function App() {
       businessName: auditResult.businessName,
       industry: auditResult.industry,
       emailsFound: auditResult.emails,
+      auditNotes: auditResult.auditNotes ?? null,
+      outreachDraft: outreachDraft?.body ?? null,
+      outreachSubject: outreachDraft?.subject ?? null,
+      outreachCTA: outreachDraft?.cta ?? null,
     })
     setLeads(updated)
   }

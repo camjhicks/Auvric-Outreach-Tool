@@ -1,94 +1,118 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ConfirmModal from './ConfirmModal'
+import { STATUS_OPTIONS } from '../services/leadStorage'
 import styles from './LeadCard.module.css'
-
-const BEST_PREFIXES = ['info', 'contact', 'hello', 'hi', 'admin', 'office', 'team', 'support']
-
-function getBestEmail(emails) {
-  if (!emails.length) return null
-  return (
-    emails.find(e => BEST_PREFIXES.includes(e.split('@')[0].toLowerCase())) ?? emails[0]
-  )
-}
 
 function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
-export default function LeadCard({ lead, onMarkEmailed, onDelete }) {
-  const [modal, setModal] = useState(null) // 'email' | 'delete' | null
+const CONTACTED_AND_BEYOND = new Set([
+  'Contacted', 'Replied', 'Meeting Scheduled', 'Proposal Sent', 'Closed Won', 'Closed Lost',
+])
+
+export default function LeadCard({ lead, onStatusChange, onNotesChange, onDelete, onViewDetails }) {
+  const [showNotes, setShowNotes] = useState(false)
+  const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [confirmContact, setConfirmContact] = useState(false)
+  const isFirstRender = useRef(true)
+
+  // Keep local notes in sync when the parent lead changes (e.g. after returning from Details)
+  useEffect(() => {
+    setLocalNotes(lead.notes ?? '')
+  }, [lead.notes])
+
+  // Debounced auto-save; skip the initial mount to avoid a no-op write
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    const timer = setTimeout(() => onNotesChange(lead.id, localNotes), 500)
+    return () => clearTimeout(timer)
+  }, [localNotes]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const domain = getDomain(lead.websiteUrl)
-  const bestEmail = getBestEmail(lead.emailsFound)
-  const otherEmails = lead.emailsFound.filter(e => e !== bestEmail)
-  const isEmailed = lead.status === 'Emailed'
+  const canMarkContacted = !CONTACTED_AND_BEYOND.has(lead.status)
+  const dateLabel = new Date(lead.dateSaved).toLocaleDateString(
+    undefined, { month: 'short', day: 'numeric', year: 'numeric' }
+  )
 
   return (
     <article className={styles.card}>
       <div className={styles.top}>
         <div className={styles.titleRow}>
           <strong className={styles.domain}>{domain}</strong>
-          <span className={`${styles.badge} ${isEmailed ? styles.badgeEmailed : styles.badgePending}`}>
-            {lead.status}
-          </span>
+          <select
+            className={styles.statusSelect}
+            value={lead.status}
+            onChange={e => onStatusChange(lead.id, e.target.value)}
+          >
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
         </div>
+
         <div className={styles.metaLine}>
           {lead.businessName && <span>{lead.businessName}</span>}
-          {lead.businessName && lead.industry && <span className={styles.dot}>·</span>}
-          {lead.industry && <span>{lead.industry}</span>}
+          {lead.businessName && <span className={styles.dot}>·</span>}
+          <span className={styles.date}>{dateLabel}</span>
         </div>
-      </div>
 
-      <div className={styles.emailBlock}>
-        {lead.emailsFound.length === 0 ? (
-          <span className={styles.noEmail}>No emails found</span>
-        ) : (
-          <>
-            {bestEmail && (
-              <div className={styles.bestRow}>
-                <span className={styles.bestLabel}>Best contact</span>
-                <a href={`mailto:${bestEmail}`} className={styles.emailLink}>{bestEmail}</a>
-              </div>
-            )}
-            {otherEmails.map(email => (
-              <a key={email} href={`mailto:${email}`} className={`${styles.emailLink} ${styles.otherEmail}`}>
-                {email}
-              </a>
-            ))}
-          </>
-        )}
+        {lead.bestEmail
+          ? <a href={`mailto:${lead.bestEmail}`} className={styles.bestEmail}>{lead.bestEmail}</a>
+          : <span className={styles.noEmail}>No emails found</span>
+        }
       </div>
 
       <div className={styles.footer}>
-        <span className={styles.date}>
-          Saved {new Date(lead.dateSaved).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-        </span>
+        <button
+          className={`${styles.notesToggle} ${showNotes ? styles.notesOpen : ''}`}
+          onClick={() => setShowNotes(s => !s)}
+        >
+          {showNotes ? '▼' : '▶'} Notes
+        </button>
         <div className={styles.actions}>
-          {!isEmailed && (
-            <button className={styles.emailBtn} onClick={() => setModal('email')}>
-              Mark As Emailed
+          <button className={styles.detailsBtn} onClick={() => onViewDetails(lead.id)}>
+            View Details
+          </button>
+          {canMarkContacted && (
+            <button className={styles.contactBtn} onClick={() => setConfirmContact(true)}>
+              Mark Contacted
             </button>
           )}
-          <button className={styles.deleteBtn} onClick={() => setModal('delete')}>
+          <button className={styles.deleteBtn} onClick={() => setConfirmDelete(true)}>
             Delete
           </button>
         </div>
       </div>
 
-      {modal === 'email' && (
+      {showNotes && (
+        <div className={styles.notesArea}>
+          <textarea
+            className={styles.notesInput}
+            placeholder="Add notes about this lead…"
+            rows={3}
+            value={localNotes}
+            onChange={e => setLocalNotes(e.target.value)}
+          />
+        </div>
+      )}
+
+      {confirmContact && (
         <ConfirmModal
-          message="Are you sure you want to mark this lead as emailed?"
-          confirmLabel="Yes, Mark As Emailed"
-          onConfirm={() => { onMarkEmailed(lead.id); setModal(null) }}
-          onCancel={() => setModal(null)}
+          message="Mark this lead as Contacted?"
+          confirmLabel="Yes, Mark Contacted"
+          onConfirm={() => { onStatusChange(lead.id, 'Contacted'); setConfirmContact(false) }}
+          onCancel={() => setConfirmContact(false)}
         />
       )}
-      {modal === 'delete' && (
+      {confirmDelete && (
         <ConfirmModal
           message="Are you sure you want to delete this lead?"
           confirmLabel="Yes, Delete Lead"
-          onConfirm={() => { onDelete(lead.id); setModal(null) }}
-          onCancel={() => setModal(null)}
+          onConfirm={() => { onDelete(lead.id); setConfirmDelete(false) }}
+          onCancel={() => setConfirmDelete(false)}
         />
       )}
     </article>

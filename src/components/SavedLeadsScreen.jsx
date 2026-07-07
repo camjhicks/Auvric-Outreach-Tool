@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
 import LeadCard from './LeadCard'
+import LeadDetailsScreen from './LeadDetailsScreen'
 import SearchBar from './SearchBar'
-import { updateLead, deleteLead } from '../services/leadStorage'
+import { updateLead, deleteLead, STATUS_OPTIONS } from '../services/leadStorage'
 import styles from './SavedLeadsScreen.module.css'
 
-const STATUS_OPTIONS = ['All', 'Not Emailed', 'Emailed']
+const FILTER_OPTIONS = ['All', ...STATUS_OPTIONS]
 
 function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
@@ -13,6 +14,32 @@ function getDomain(url) {
 export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
+  const [selectedLeadId, setSelectedLeadId] = useState(null)
+
+  const selectedLead = selectedLeadId ? leads.find(l => l.id === selectedLeadId) : null
+
+  function handleStatusChange(id, status) {
+    onLeadsChange(updateLead(id, { status }))
+  }
+
+  function handleNotesChange(id, notes) {
+    onLeadsChange(updateLead(id, { notes }))
+  }
+
+  function handleDelete(id) {
+    if (selectedLeadId === id) setSelectedLeadId(null)
+    onLeadsChange(deleteLead(id))
+  }
+
+  if (selectedLead) {
+    return (
+      <LeadDetailsScreen
+        lead={selectedLead}
+        onBack={() => setSelectedLeadId(null)}
+        onNotesChange={handleNotesChange}
+      />
+    )
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -24,18 +51,12 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
         getDomain(l.websiteUrl).toLowerCase().includes(q) ||
         (l.businessName ?? '').toLowerCase().includes(q) ||
         (l.industry ?? '').toLowerCase().includes(q) ||
-        l.emailsFound.some(e => e.toLowerCase().includes(q))
+        l.emailsFound.some(e => e.toLowerCase().includes(q)) ||
+        (l.notes ?? '').toLowerCase().includes(q) ||
+        (l.outreachSubject ?? '').toLowerCase().includes(q)
       )
     })
   }, [leads, query, statusFilter])
-
-  function handleMarkEmailed(id) {
-    onLeadsChange(updateLead(id, { status: 'Emailed' }))
-  }
-
-  function handleDelete(id) {
-    onLeadsChange(deleteLead(id))
-  }
 
   return (
     <div className={styles.screen}>
@@ -56,7 +77,7 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
         >
-          {STATUS_OPTIONS.map(opt => (
+          {FILTER_OPTIONS.map(opt => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
         </select>
@@ -79,8 +100,10 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
             <LeadCard
               key={lead.id}
               lead={lead}
-              onMarkEmailed={handleMarkEmailed}
+              onStatusChange={handleStatusChange}
+              onNotesChange={handleNotesChange}
               onDelete={handleDelete}
+              onViewDetails={setSelectedLeadId}
             />
           ))}
         </div>

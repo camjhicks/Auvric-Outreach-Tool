@@ -1,9 +1,9 @@
 import styles from './StatsBar.module.css'
 
-export default function StatsBar({ stats = { generated: 0, emailed: 0, saved: 0 } }) {
+export default function StatsBar({ stats = { generated: 0, contacted: 0, saved: 0 } }) {
   const items = [
     { label: 'Leads Generated', value: stats.generated },
-    { label: 'Leads Emailed', value: stats.emailed },
+    { label: 'Leads Contacted', value: stats.contacted },
     { label: 'Leads Currently Saved', value: stats.saved },
   ]
 
