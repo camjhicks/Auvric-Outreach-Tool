@@ -37,6 +37,7 @@ router.post('/', async (req, res) => {
     html = await response.text()
   } catch (err) {
     const isTimeout = err.name === 'AbortError'
+    const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({ emails: [], auditNotes: [], accessError: true })
     return res.json({
       url,
       businessName,
@@ -47,6 +48,9 @@ router.post('/', async (req, res) => {
       accessErrorMessage: isTimeout
         ? 'Request timed out — the site took too long to respond.'
         : 'Unable to access this website right now.',
+      leadScore,
+      leadPriority,
+      scoreBreakdown,
     })
   }
 
