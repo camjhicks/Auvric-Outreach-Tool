@@ -5,6 +5,7 @@ import ResultsArea from './components/ResultsArea'
 import StatsBar from './components/StatsBar'
 import SavedLeadsScreen from './components/SavedLeadsScreen'
 import FollowUpQueueScreen from './components/FollowUpQueueScreen'
+import BulkAuditScreen from './components/BulkAuditScreen'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
 import { getBestEmail } from './utils/bestEmail'
@@ -18,7 +19,7 @@ import {
 import styles from './App.module.css'
 
 export default function App() {
-  const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue'
+  const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue' | 'bulk'
   const [auditResult, setAuditResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [inputError, setInputError] = useState(null)
@@ -107,7 +108,7 @@ export default function App() {
   if (screen === 'leads') {
     return (
       <div className={styles.app}>
-        <Header onViewQueue={() => setScreen('queue')} />
+        <Header onViewQueue={() => setScreen('queue')} onViewBulk={() => setScreen('bulk')} />
         <StatsBar stats={stats} />
         <SavedLeadsScreen
           leads={leads}
@@ -121,7 +122,7 @@ export default function App() {
   if (screen === 'queue') {
     return (
       <div className={styles.app}>
-        <Header onViewLeads={() => setScreen('leads')} />
+        <Header onViewLeads={() => setScreen('leads')} onViewBulk={() => setScreen('bulk')} />
         <StatsBar stats={stats} />
         <FollowUpQueueScreen
           leads={leads}
@@ -132,11 +133,22 @@ export default function App() {
     )
   }
 
+  if (screen === 'bulk') {
+    return (
+      <div className={styles.app}>
+        <Header onViewLeads={() => setScreen('leads')} onViewQueue={() => setScreen('queue')} />
+        <StatsBar stats={stats} />
+        <BulkAuditScreen onBack={() => setScreen('audit')} />
+      </div>
+    )
+  }
+
   return (
     <div className={styles.app}>
       <Header
         onViewLeads={() => setScreen('leads')}
         onViewQueue={() => setScreen('queue')}
+        onViewBulk={() => setScreen('bulk')}
       />
       <StatsBar stats={stats} />
       <main className={styles.main}>

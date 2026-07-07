@@ -1,7 +1,7 @@
 import styles from './Header.module.css'
 
-export default function Header({ onViewLeads, onViewQueue }) {
-  const hasNav = onViewLeads || onViewQueue
+export default function Header({ onViewLeads, onViewQueue, onViewBulk }) {
+  const hasNav = onViewLeads || onViewQueue || onViewBulk
   return (
     <header className={styles.header}>
       <div className={styles.logo}>
@@ -16,6 +16,9 @@ export default function Header({ onViewLeads, onViewQueue }) {
           )}
           {onViewQueue && (
             <button className={styles.navBtn} onClick={onViewQueue}>Follow-Up Queue</button>
+          )}
+          {onViewBulk && (
+            <button className={styles.navBtn} onClick={onViewBulk}>Bulk Audit</button>
           )}
         </nav>
       )}
