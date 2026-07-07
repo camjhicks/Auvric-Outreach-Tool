@@ -3,6 +3,7 @@ import LeadCard from './LeadCard'
 import LeadDetailsScreen from './LeadDetailsScreen'
 import SearchBar from './SearchBar'
 import { updateLead, deleteLead, STATUS_OPTIONS } from '../services/leadStorage'
+import { downloadLeadsCSV } from '../utils/exportCsv'
 import styles from './SavedLeadsScreen.module.css'
 
 const FILTER_OPTIONS = ['All', ...STATUS_OPTIONS]
@@ -81,6 +82,17 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
             <option key={opt} value={opt}>{opt}</option>
           ))}
         </select>
+      </div>
+
+      <div className={styles.actionsRow}>
+        <button
+          className={styles.exportBtn}
+          onClick={() => downloadLeadsCSV(leads)}
+          disabled={leads.length === 0}
+          title={leads.length === 0 ? 'No leads to export' : `Export ${leads.length} lead${leads.length !== 1 ? 's' : ''} as CSV`}
+        >
+          ↓ Export CSV
+        </button>
       </div>
 
       {leads.length === 0 ? (
