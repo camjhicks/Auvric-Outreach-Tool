@@ -124,3 +124,60 @@
   color: #4a4f66;
   cursor: default;
 }
+
+/* Loading */
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+}
+
+.spinner {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loadingText {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+/* API error */
+.apiError {
+  font-size: 0.875rem;
+  color: #f87171;
+  padding: 0.5rem 0;
+}
+
+/* Results */
+.resultsGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* Empty placeholder */
+.emptyResults {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.emptyText {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}

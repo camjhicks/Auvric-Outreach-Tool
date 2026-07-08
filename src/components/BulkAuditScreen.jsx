@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react'
+import { runBulkAudit } from '../services/bulkAuditApi'
+import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
 
 const MAX_URLS = 20
@@ -66,9 +68,27 @@ function parseInput(text) {
 
 export default function BulkAuditScreen({ onBack }) {
   const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [results, setResults] = useState(null)
+  const [apiError, setApiError] = useState(null)
 
   const { valid, warnings } = useMemo(() => parseInput(input), [input])
   const hasInput = input.trim().length > 0
+
+  async function handleStart() {
+    if (valid.length === 0 || isLoading) return
+    setApiError(null)
+    setResults(null)
+    setIsLoading(true)
+    try {
+      const data = await runBulkAudit(valid)
+      setResults(data)
+    } catch (err) {
+      setApiError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   return (
     <div className={styles.screen}>
@@ -116,12 +136,42 @@ export default function BulkAuditScreen({ onBack }) {
 
       <button
         className={styles.startBtn}
-        disabled={valid.length === 0}
+        disabled={valid.length === 0 || isLoading}
+        onClick={handleStart}
       >
-        {valid.length > 0
-          ? `Start Bulk Audit — ${valid.length} URL${valid.length !== 1 ? 's' : ''}`
-          : 'Start Bulk Audit'}
+        {isLoading
+          ? 'Running Audit…'
+          : valid.length > 0
+            ? `Start Bulk Audit — ${valid.length} URL${valid.length !== 1 ? 's' : ''}`
+            : 'Start Bulk Audit'}
       </button>
+
+      {isLoading && (
+        <div className={styles.loadingState}>
+          <span className={styles.spinner} />
+          <p className={styles.loadingText}>
+            Auditing {valid.length} site{valid.length !== 1 ? 's' : ''}…
+          </p>
+        </div>
+      )}
+
+      {!isLoading && apiError && (
+        <p className={styles.apiError}>{apiError}</p>
+      )}
+
+      {!isLoading && !apiError && results && results.length > 0 && (
+        <div className={styles.resultsGrid}>
+          {results.map(result => (
+            <BulkResultCard key={result.normalizedUrl} result={result} />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && !apiError && !results && (
+        <div className={styles.emptyResults}>
+          <p className={styles.emptyText}>Bulk audit results will appear here.</p>
+        </div>
+      )}
     </div>
   )
 }

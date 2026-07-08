@@ -1,0 +1,160 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.domain {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  word-break: break-all;
+  flex: 1;
+}
+
+.badgeSuccess {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  color: #4ade80;
+  border: 1px solid #4ade80;
+  white-space: nowrap;
+}
+
+.badgeError {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  color: #f87171;
+  border: 1px solid #f87171;
+  white-space: nowrap;
+}
+
+.scoreRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.score {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.priority {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.scoreCaption {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.errorMsg {
+  font-size: 0.85rem;
+  color: #f87171;
+  margin: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sectionLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.muted {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.emailList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.emailItem {
+  font-size: 0.85rem;
+}
+
+.emailLink {
+  color: var(--color-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.emailLink:hover {
+  text-decoration: underline;
+}
+
+.notesList,
+.breakdownList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.noteItem {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  line-height: 1.4;
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.noteItem::before {
+  content: '·';
+  position: absolute;
+  left: 0.2rem;
+  color: #fb923c;
+}
+
+.breakdownItem {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  padding-left: 0.9rem;
+  position: relative;
+}
+
+.breakdownItem::before {
+  content: '·';
+  position: absolute;
+  left: 0.2rem;
+}
+
+.more {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  padding-left: 0.9rem;
+}
