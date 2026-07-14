@@ -11,7 +11,7 @@ const PRIORITY_COLOR = {
   'Low Priority':    '#f87171',
 }
 
-export default function BulkResultCard({ result }) {
+export default function BulkResultCard({ result, selected = false, saved = false, onSelectionChange }) {
   const {
     normalizedUrl,
     accessError,
@@ -26,10 +26,22 @@ export default function BulkResultCard({ result }) {
 
   const domain = getDomain(normalizedUrl)
   const priorityColor = PRIORITY_COLOR[leadPriority] ?? 'var(--color-muted)'
+  const canSelect = !accessError && !saved
 
   return (
-    <article className={styles.card}>
+    <article className={`${styles.card} ${selected ? styles.cardSelected : ''}`}>
       <div className={styles.header}>
+        {canSelect ? (
+          <button
+            type="button"
+            className={`${styles.checkbox} ${selected ? styles.checkboxChecked : ''}`}
+            onClick={() => onSelectionChange(normalizedUrl)}
+            aria-label={selected ? `Deselect ${domain}` : `Select ${domain}`}
+            aria-pressed={selected}
+          />
+        ) : saved ? (
+          <span className={styles.savedBadge}>Saved ✓</span>
+        ) : null}
         <span className={styles.domain} title={normalizedUrl}>{domain}</span>
         {accessError
           ? <span className={styles.badgeError}>Access Error</span>

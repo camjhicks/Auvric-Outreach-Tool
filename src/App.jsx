@@ -138,7 +138,11 @@ export default function App() {
       <div className={styles.app}>
         <Header onViewLeads={() => setScreen('leads')} onViewQueue={() => setScreen('queue')} />
         <StatsBar stats={stats} />
-        <BulkAuditScreen onBack={() => setScreen('audit')} />
+        <BulkAuditScreen
+          onBack={() => setScreen('audit')}
+          leads={leads}
+          onLeadsChange={handleLeadsChange}
+        />
       </div>
     )
   }

@@ -3,6 +3,14 @@ import { getBestEmail } from '../utils/bestEmail.js'
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
 
+// Strips trailing slash for stable URL comparison across storage and results.
+// Both https://example.com and https://example.com/ normalize to the same key.
+export function normalizeLeadUrl(url) {
+  if (!url) return ''
+  const s = url.trim()
+  return s.endsWith('/') ? s.slice(0, -1) : s
+}
+
 export const STATUS_OPTIONS = [
   'New',
   'Draft Generated',
@@ -42,6 +50,7 @@ function migrateLead(lead) {
     leadScore: lead.leadScore ?? null,
     leadPriority: lead.leadPriority ?? null,
     scoreBreakdown: lead.scoreBreakdown ?? [],
+    pagesChecked: lead.pagesChecked ?? [],
   }
 }
 
@@ -111,6 +120,57 @@ export function deleteLead(id) {
 
 export function isLeadSaved(websiteUrl) {
   return getLeads().some(l => l.websiteUrl === websiteUrl)
+}
+
+// Batch-save bulk audit results into the lead system.
+// Skips results that duplicate an existing lead (by normalized URL) or
+// that duplicate each other within the same batch.
+// Returns { savedCount, skippedCount, leads }.
+export function saveBulkLeads(results) {
+  const existing = getLeads()
+  const existingNormalized = new Set(existing.map(l => normalizeLeadUrl(l.websiteUrl)))
+
+  const batchSeen = new Set()
+  let savedCount = 0
+  let skippedCount = 0
+  const newLeads = []
+
+  for (const result of results) {
+    const normUrl = normalizeLeadUrl(result.normalizedUrl)
+    if (existingNormalized.has(normUrl) || batchSeen.has(normUrl)) {
+      skippedCount++
+      continue
+    }
+    batchSeen.add(normUrl)
+    const emails = result.emailsFound ?? []
+    newLeads.push({
+      id: crypto.randomUUID(),
+      websiteUrl: result.normalizedUrl,
+      businessName: '',
+      industry: '',
+      dateSaved: new Date().toISOString(),
+      emailsFound: emails,
+      bestEmail: getBestEmail(emails),
+      pagesChecked: result.pagesChecked ?? [],
+      auditNotes: result.auditNotes ?? null,
+      outreachDraft: null,
+      outreachSubject: null,
+      outreachCTA: null,
+      status: 'New',
+      notes: '',
+      lastContactedAt: null,
+      nextFollowUpAt: null,
+      followUpCount: 0,
+      leadScore: result.leadScore ?? null,
+      leadPriority: result.leadPriority ?? null,
+      scoreBreakdown: result.scoreBreakdown ?? [],
+    })
+    savedCount++
+  }
+
+  const leads = [...newLeads, ...existing]
+  setLeads(leads)
+  return { savedCount, skippedCount, leads }
 }
 
 export function getLeadsGenerated() {

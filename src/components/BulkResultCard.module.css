@@ -6,6 +6,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+  transition: border-color 0.15s;
+}
+
+.cardSelected {
+  border-color: var(--color-primary);
 }
 
 .header {
@@ -157,4 +162,43 @@
   font-size: 0.75rem;
   color: var(--color-muted);
   padding-left: 0.9rem;
+}
+
+/* Selection control */
+.checkbox {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s;
+  padding: 0;
+}
+
+.checkbox:hover {
+  border-color: var(--color-primary);
+}
+
+.checkboxChecked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.checkboxChecked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+
+/* Saved badge */
+.savedBadge {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #4ade80;
+  white-space: nowrap;
 }

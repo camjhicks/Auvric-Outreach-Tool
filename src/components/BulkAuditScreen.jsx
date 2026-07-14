@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
+import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
 
@@ -66,19 +67,29 @@ function parseInput(text) {
   return { valid: capped, warnings }
 }
 
-export default function BulkAuditScreen({ onBack }) {
+export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [apiError, setApiError] = useState(null)
+  const [selected, setSelected] = useState(new Set())
+  const [saveMessage, setSaveMessage] = useState(null)
 
   const { valid, warnings } = useMemo(() => parseInput(input), [input])
   const hasInput = input.trim().length > 0
+
+  // Set of normalized URLs already in the leads system — recomputed when leads changes
+  const savedUrls = useMemo(
+    () => new Set(leads.map(l => normalizeLeadUrl(l.websiteUrl))),
+    [leads]
+  )
 
   async function handleStart() {
     if (valid.length === 0 || isLoading) return
     setApiError(null)
     setResults(null)
+    setSelected(new Set())
+    setSaveMessage(null)
     setIsLoading(true)
     try {
       const data = await runBulkAudit(valid)
@@ -87,6 +98,31 @@ export default function BulkAuditScreen({ onBack }) {
       setApiError(err.message)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  function handleToggle(url) {
+    const normUrl = normalizeLeadUrl(url)
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(normUrl)) next.delete(normUrl)
+      else next.add(normUrl)
+      return next
+    })
+  }
+
+  function handleSaveSelected() {
+    if (selected.size === 0 || !results) return
+    const selectedResults = results.filter(r => selected.has(normalizeLeadUrl(r.normalizedUrl)))
+    const { savedCount, skippedCount, leads: updatedLeads } = saveBulkLeads(selectedResults)
+    onLeadsChange(updatedLeads)
+    setSelected(new Set())
+    if (skippedCount === 0) {
+      setSaveMessage(`${savedCount} lead${savedCount !== 1 ? 's' : ''} saved successfully.`)
+    } else if (savedCount === 0) {
+      setSaveMessage(`0 leads saved — ${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped.`)
+    } else {
+      setSaveMessage(`${savedCount} lead${savedCount !== 1 ? 's' : ''} saved. ${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped.`)
     }
   }
 
@@ -160,11 +196,36 @@ export default function BulkAuditScreen({ onBack }) {
       )}
 
       {!isLoading && !apiError && results && results.length > 0 && (
-        <div className={styles.resultsGrid}>
-          {results.map(result => (
-            <BulkResultCard key={result.normalizedUrl} result={result} />
-          ))}
-        </div>
+        <>
+          <div className={styles.resultsHeader}>
+            <button
+              className={styles.saveSelectedBtn}
+              disabled={selected.size === 0}
+              onClick={handleSaveSelected}
+            >
+              {selected.size > 0
+                ? `Save Selected (${selected.size})`
+                : 'Save Selected'}
+            </button>
+            {saveMessage && (
+              <span className={styles.saveMessage}>{saveMessage}</span>
+            )}
+          </div>
+          <div className={styles.resultsGrid}>
+            {results.map(result => {
+              const normUrl = normalizeLeadUrl(result.normalizedUrl)
+              return (
+                <BulkResultCard
+                  key={result.normalizedUrl}
+                  result={result}
+                  selected={selected.has(normUrl)}
+                  saved={savedUrls.has(normUrl)}
+                  onSelectionChange={handleToggle}
+                />
+              )
+            })}
+          </div>
+        </>
       )}
 
       {!isLoading && !apiError && !results && (

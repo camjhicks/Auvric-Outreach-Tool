@@ -160,6 +160,41 @@
   padding: 0.5rem 0;
 }
 
+/* Results header (save controls row) */
+.resultsHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.saveSelectedBtn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.saveSelectedBtn:hover:not(:disabled) {
+  opacity: 0.82;
+}
+
+.saveSelectedBtn:disabled {
+  background: var(--color-border);
+  color: #4a4f66;
+  cursor: default;
+}
+
+.saveMessage {
+  font-size: 0.8rem;
+  color: #4ade80;
+}
+
 /* Results */
 .resultsGrid {
   display: flex;
