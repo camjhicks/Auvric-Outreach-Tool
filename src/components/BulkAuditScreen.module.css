@@ -195,6 +195,28 @@
   color: #4ade80;
 }
 
+.exportBtn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.exportBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.exportError {
+  font-size: 0.8rem;
+  color: #f87171;
+}
+
 /* Results */
 .resultsGrid {
   display: flex;

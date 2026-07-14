@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
 import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
+import { downloadBulkAuditCSV } from '../utils/exportBulkAuditCsv'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
 
@@ -74,6 +75,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
   const [apiError, setApiError] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [saveMessage, setSaveMessage] = useState(null)
+  const [exportError, setExportError] = useState(null)
 
   const { valid, warnings } = useMemo(() => parseInput(input), [input])
   const hasInput = input.trim().length > 0
@@ -90,6 +92,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
     setResults(null)
     setSelected(new Set())
     setSaveMessage(null)
+    setExportError(null)
     setIsLoading(true)
     try {
       const data = await runBulkAudit(valid)
@@ -109,6 +112,16 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
       else next.add(normUrl)
       return next
     })
+  }
+
+  function handleExport() {
+    if (!results || results.length === 0) return
+    setExportError(null)
+    try {
+      downloadBulkAuditCSV(results, savedUrls)
+    } catch {
+      setExportError('Unable to export these results right now.')
+    }
   }
 
   function handleSaveSelected() {
@@ -207,8 +220,17 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
                 ? `Save Selected (${selected.size})`
                 : 'Save Selected'}
             </button>
+            <button
+              className={styles.exportBtn}
+              onClick={handleExport}
+            >
+              Export Results CSV
+            </button>
             {saveMessage && (
               <span className={styles.saveMessage}>{saveMessage}</span>
+            )}
+            {exportError && (
+              <span className={styles.exportError}>{exportError}</span>
             )}
           </div>
           <div className={styles.resultsGrid}>
