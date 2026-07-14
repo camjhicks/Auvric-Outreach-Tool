@@ -1,39 +1,12 @@
 import { useState, useMemo } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
 import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
+import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { downloadBulkAuditCSV } from '../utils/exportBulkAuditCsv'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
 
 const MAX_URLS = 20
-
-// Matches http:// or https:// (the only schemes we accept)
-const HTTP_SCHEME_RE = /^https?:\/\//i
-// Matches any scheme:// or scheme: — used to reject non-http schemes early so
-// we don't accidentally prepend https:// and create a confusable URL
-const ANY_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+\-.]*:/i
-
-function normalizeInput(raw) {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  try {
-    let input = trimmed
-    if (!HTTP_SCHEME_RE.test(trimmed)) {
-      if (ANY_SCHEME_RE.test(trimmed)) return null  // ftp://, mailto:, etc.
-      input = `https://${trimmed}`
-    }
-    const u = new URL(input)
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
-    // Require at least one dot in hostname — rejects bare words like "not-a-url"
-    if (!u.hostname.includes('.')) return null
-    u.hash = ''
-    u.search = ''
-    // Remove trailing slash for clean dedup key
-    return u.href.endsWith('/') ? u.href.slice(0, -1) : u.href
-  } catch {
-    return null
-  }
-}
 
 function parseInput(text) {
   const lines = text.split('\n')
@@ -44,7 +17,7 @@ function parseInput(text) {
   for (const raw of lines) {
     const line = raw.trim()
     if (!line) continue
-    const normalized = normalizeInput(line)
+    const normalized = normalizeWebsiteUrl(line)
     if (!normalized) {
       warnings.push(`Skipped — not a valid URL: ${line}`)
       continue
@@ -68,8 +41,8 @@ function parseInput(text) {
   return { valid: capped, warnings }
 }
 
-export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
-  const [input, setInput] = useState('')
+export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, initialInput = '' }) {
+  const [input, setInput] = useState(initialInput)
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [apiError, setApiError] = useState(null)

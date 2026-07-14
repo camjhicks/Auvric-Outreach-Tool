@@ -1,0 +1,284 @@
+.screen {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.backBtn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.45rem 0.85rem;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.backBtn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.description {
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Form */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 180px;
+}
+
+.limitField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.input,
+.select {
+  background: #12141e;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.55rem 0.75rem;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.input:focus,
+.select:focus {
+  border-color: var(--color-primary);
+}
+
+.input::placeholder {
+  color: #4a4f66;
+}
+
+.controlsRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.searchBtn {
+  padding: 0.6rem 1.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.searchBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.searchBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* States */
+.error {
+  font-size: 0.875rem;
+  color: #f87171;
+  margin: 0;
+}
+
+.loadingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+}
+
+.spinner {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loadingText {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+/* Results */
+.resultsSummary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.resultsCount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.resultsQuery {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.emptyResults {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 0;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.emptyText {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Selection bar */
+.selectionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.selectionControls {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-size: 0.825rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.linkBtn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.linkBtn:disabled {
+  color: #4a4f66;
+  cursor: default;
+}
+
+.selectedCount {
+  font-size: 0.825rem;
+  color: var(--color-muted);
+}
+
+.auditBtn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.auditBtn:hover:not(:disabled) {
+  opacity: 0.82;
+}
+
+.auditBtn:disabled {
+  background: var(--color-border);
+  color: #4a4f66;
+  cursor: default;
+}
+
+.capNote {
+  font-size: 0.8rem;
+  color: #fb923c;
+  margin: 0;
+}
+
+.attribution {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}

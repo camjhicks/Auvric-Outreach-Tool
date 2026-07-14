@@ -6,6 +6,7 @@ import StatsBar from './components/StatsBar'
 import SavedLeadsScreen from './components/SavedLeadsScreen'
 import FollowUpQueueScreen from './components/FollowUpQueueScreen'
 import BulkAuditScreen from './components/BulkAuditScreen'
+import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
 import { getBestEmail } from './utils/bestEmail'
@@ -19,7 +20,8 @@ import {
 import styles from './App.module.css'
 
 export default function App() {
-  const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue' | 'bulk'
+  const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue' | 'bulk' | 'discovery'
+  const [bulkPrefill, setBulkPrefill] = useState('') // URLs seeded into Bulk Audit
   const [auditResult, setAuditResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [inputError, setInputError] = useState(null)
@@ -105,10 +107,23 @@ export default function App() {
     setLeads(updatedLeads)
   }
 
+  // Manual navigation to Bulk Audit starts with a clean (empty) input.
+  function goBulk() {
+    setBulkPrefill('')
+    setScreen('bulk')
+  }
+
+  // Lead Discovery → Bulk Audit: seed the input with selected website URLs.
+  // Does NOT start the audit — the user reviews/edits the prefilled list first.
+  function handleSendToBulk(urls) {
+    setBulkPrefill(urls.join('\n'))
+    setScreen('bulk')
+  }
+
   if (screen === 'leads') {
     return (
       <div className={styles.app}>
-        <Header onViewQueue={() => setScreen('queue')} onViewBulk={() => setScreen('bulk')} />
+        <Header onViewQueue={() => setScreen('queue')} onViewBulk={goBulk} onViewDiscovery={() => setScreen('discovery')} />
         <StatsBar stats={stats} />
         <SavedLeadsScreen
           leads={leads}
@@ -122,7 +137,7 @@ export default function App() {
   if (screen === 'queue') {
     return (
       <div className={styles.app}>
-        <Header onViewLeads={() => setScreen('leads')} onViewBulk={() => setScreen('bulk')} />
+        <Header onViewLeads={() => setScreen('leads')} onViewBulk={goBulk} onViewDiscovery={() => setScreen('discovery')} />
         <StatsBar stats={stats} />
         <FollowUpQueueScreen
           leads={leads}
@@ -136,12 +151,26 @@ export default function App() {
   if (screen === 'bulk') {
     return (
       <div className={styles.app}>
-        <Header onViewLeads={() => setScreen('leads')} onViewQueue={() => setScreen('queue')} />
+        <Header onViewLeads={() => setScreen('leads')} onViewQueue={() => setScreen('queue')} onViewDiscovery={() => setScreen('discovery')} />
         <StatsBar stats={stats} />
         <BulkAuditScreen
           onBack={() => setScreen('audit')}
           leads={leads}
           onLeadsChange={handleLeadsChange}
+          initialInput={bulkPrefill}
+        />
+      </div>
+    )
+  }
+
+  if (screen === 'discovery') {
+    return (
+      <div className={styles.app}>
+        <Header onViewLeads={() => setScreen('leads')} onViewQueue={() => setScreen('queue')} onViewBulk={goBulk} />
+        <StatsBar stats={stats} />
+        <LeadDiscoveryScreen
+          onBack={() => setScreen('audit')}
+          onSendToBulk={handleSendToBulk}
         />
       </div>
     )
@@ -152,7 +181,8 @@ export default function App() {
       <Header
         onViewLeads={() => setScreen('leads')}
         onViewQueue={() => setScreen('queue')}
-        onViewBulk={() => setScreen('bulk')}
+        onViewBulk={goBulk}
+        onViewDiscovery={() => setScreen('discovery')}
       />
       <StatsBar stats={stats} />
       <main className={styles.main}>

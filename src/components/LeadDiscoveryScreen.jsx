@@ -1,0 +1,261 @@
+import { useState, useMemo } from 'react'
+import { discoverLeads } from '../services/leadDiscoveryApi'
+import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
+import DiscoveredBusinessCard from './DiscoveredBusinessCard'
+import styles from './LeadDiscoveryScreen.module.css'
+
+const LIMIT_OPTIONS = [10, 20, 40, 60]
+const DEFAULT_LIMIT = 20
+// Bulk Audit accepts at most 20 URLs per batch; keep selection within that cap.
+const MAX_SELECTION = 20
+
+export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
+  const [industry, setIndustry] = useState('')
+  const [location, setLocation] = useState('')
+  const [limit, setLimit] = useState(DEFAULT_LIMIT)
+
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null) // { query, businesses, totalFound }
+  const [selected, setSelected] = useState(new Set()) // providerIds
+
+  // Enrich each business with a normalized website + eligibility flag.
+  const businesses = useMemo(() => {
+    if (!result) return []
+    return result.businesses.map(b => {
+      const normalizedUrl = normalizeWebsiteUrl(b.websiteUrl)
+      return { ...b, normalizedUrl, eligible: normalizedUrl != null }
+    })
+  }, [result])
+
+  // Normalized URLs claimed by the current selection — blocks selecting a
+  // second business that resolves to the same website.
+  const claimedUrls = useMemo(() => {
+    const set = new Set()
+    for (const b of businesses) {
+      if (selected.has(b.providerId) && b.normalizedUrl) set.add(b.normalizedUrl)
+    }
+    return set
+  }, [businesses, selected])
+
+  const eligibleCount = businesses.filter(b => b.eligible).length
+  const atCap = selected.size >= MAX_SELECTION
+
+  function isSelectable(business) {
+    if (!business.eligible) return false
+    if (selected.has(business.providerId)) return true // can always deselect
+    if (atCap) return false
+    if (claimedUrls.has(business.normalizedUrl)) return false // duplicate website
+    return true
+  }
+
+  async function handleSearch(e) {
+    e?.preventDefault()
+    if (isLoading) return
+    if (!industry.trim() || !location.trim()) {
+      setError('Please enter both an industry and a location.')
+      return
+    }
+    // Clear prior selections/results/messages as the new request begins.
+    setError(null)
+    setResult(null)
+    setSelected(new Set())
+    setIsLoading(true)
+    try {
+      const data = await discoverLeads({
+        industry: industry.trim(),
+        location: location.trim(),
+        limit,
+      })
+      setResult(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  function handleToggle(providerId) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(providerId)) {
+        next.delete(providerId)
+        return next
+      }
+      const business = businesses.find(b => b.providerId === providerId)
+      if (!business || !isSelectable(business)) return prev
+      next.add(providerId)
+      return next
+    })
+  }
+
+  function handleSelectAll() {
+    const next = new Set()
+    const urls = new Set()
+    for (const b of businesses) {
+      if (next.size >= MAX_SELECTION) break
+      if (!b.eligible) continue
+      if (urls.has(b.normalizedUrl)) continue // skip duplicate websites
+      next.add(b.providerId)
+      urls.add(b.normalizedUrl)
+    }
+    setSelected(next)
+  }
+
+  function handleClearSelection() {
+    setSelected(new Set())
+  }
+
+  function handleAuditSelected() {
+    if (selected.size === 0) return
+    const urls = []
+    const seen = new Set()
+    for (const b of businesses) {
+      if (!selected.has(b.providerId) || !b.normalizedUrl) continue
+      if (seen.has(b.normalizedUrl)) continue
+      seen.add(b.normalizedUrl)
+      urls.push(b.normalizedUrl)
+    }
+    if (urls.length > 0) onSendToBulk(urls)
+  }
+
+  return (
+    <div className={styles.screen}>
+      <div className={styles.topBar}>
+        <button className={styles.backBtn} onClick={onBack}>← Back To Audit</button>
+        <h2 className={styles.title}>Lead Discovery</h2>
+      </div>
+
+      <p className={styles.description}>
+        Find real local businesses, review them, and send their websites into Auvric
+        Scout's audit system.
+      </p>
+
+      <form className={styles.form} onSubmit={handleSearch}>
+        <div className={styles.fieldRow}>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Industry</span>
+            <input
+              className={styles.input}
+              type="text"
+              value={industry}
+              onChange={e => setIndustry(e.target.value)}
+              placeholder="HVAC companies"
+              maxLength={120}
+              autoComplete="off"
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Location</span>
+            <input
+              className={styles.input}
+              type="text"
+              value={location}
+              onChange={e => setLocation(e.target.value)}
+              placeholder="Orlando, Florida"
+              maxLength={120}
+              autoComplete="off"
+            />
+          </label>
+        </div>
+
+        <div className={styles.controlsRow}>
+          <label className={styles.limitField}>
+            <span className={styles.fieldLabel}>Number of businesses</span>
+            <select
+              className={styles.select}
+              value={limit}
+              onChange={e => setLimit(Number(e.target.value))}
+            >
+              {LIMIT_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <button className={styles.searchBtn} type="submit" disabled={isLoading}>
+            {isLoading ? 'Finding businesses…' : 'Find Leads'}
+          </button>
+        </div>
+      </form>
+
+      {error && <p className={styles.error}>{error}</p>}
+
+      {isLoading && (
+        <div className={styles.loadingState}>
+          <span className={styles.spinner} />
+          <p className={styles.loadingText}>Finding businesses…</p>
+        </div>
+      )}
+
+      {!isLoading && result && (
+        <>
+          <div className={styles.resultsSummary}>
+            <span className={styles.resultsCount}>
+              {result.totalFound} business{result.totalFound !== 1 ? 'es' : ''} found
+            </span>
+            <span className={styles.resultsQuery}>
+              {result.query.industry} in {result.query.location}
+            </span>
+          </div>
+
+          {businesses.length === 0 ? (
+            <div className={styles.emptyResults}>
+              <p className={styles.emptyText}>
+                No businesses were found for this search. Try a broader industry or location.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className={styles.selectionBar}>
+                <div className={styles.selectionControls}>
+                  <button
+                    type="button"
+                    className={styles.linkBtn}
+                    onClick={handleSelectAll}
+                    disabled={eligibleCount === 0}
+                  >
+                    Select All Eligible
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.linkBtn}
+                    onClick={handleClearSelection}
+                    disabled={selected.size === 0}
+                  >
+                    Clear Selection
+                  </button>
+                  <span className={styles.selectedCount}>Selected: {selected.size}</span>
+                </div>
+                <button
+                  type="button"
+                  className={styles.auditBtn}
+                  onClick={handleAuditSelected}
+                  disabled={selected.size === 0}
+                >
+                  Audit Selected Websites ({selected.size})
+                </button>
+              </div>
+
+              {atCap && (
+                <p className={styles.capNote}>You can audit up to {MAX_SELECTION} websites at a time.</p>
+              )}
+
+              <p className={styles.attribution}>Powered by Google</p>
+
+              <div className={styles.grid}>
+                {businesses.map(b => (
+                  <DiscoveredBusinessCard
+                    key={b.providerId}
+                    business={b}
+                    eligible={b.eligible}
+                    selected={selected.has(b.providerId)}
+                    selectable={isSelectable(b)}
+                    onToggle={handleToggle}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}

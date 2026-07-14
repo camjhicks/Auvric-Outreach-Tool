@@ -1,0 +1,138 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  transition: border-color 0.15s;
+}
+
+.cardSelected {
+  border-color: var(--color-primary);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  flex: 1;
+  word-break: break-word;
+}
+
+.checkbox {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 0.1rem;
+  border-radius: 4px;
+  border: 2px solid var(--color-border);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+  padding: 0;
+}
+
+.checkbox:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.checkbox:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.checkboxChecked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.checkboxChecked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6l3 3 5-5' stroke='%23fff' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+
+.noWebsiteTag {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+  margin-top: 0.05rem;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  align-items: baseline;
+}
+
+.label {
+  color: var(--color-muted);
+  min-width: 66px;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.value {
+  color: var(--color-text);
+  word-break: break-word;
+  flex: 1;
+}
+
+.link {
+  color: var(--color-primary);
+  text-decoration: none;
+  word-break: break-all;
+  flex: 1;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+}
+
+.source {
+  font-size: 0.72rem;
+  color: var(--color-muted);
+}
+
+.mapsLink {
+  font-size: 0.78rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.mapsLink:hover {
+  text-decoration: underline;
+}
