@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import styles from './ConfirmModal.module.css'
 
-export default function ConfirmModal({ message, confirmLabel, onConfirm, onCancel }) {
+export default function ConfirmModal({ message, confirmLabel, cancelLabel = 'Cancel', onConfirm, onCancel }) {
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') onCancel()
@@ -15,7 +15,7 @@ export default function ConfirmModal({ message, confirmLabel, onConfirm, onCance
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
         <p className={styles.message}>{message}</p>
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={onCancel}>Cancel</button>
+          <button className={styles.cancelBtn} onClick={onCancel}>{cancelLabel}</button>
           <button className={styles.confirmBtn} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>

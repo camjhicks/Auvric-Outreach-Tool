@@ -1,27 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import LeadOutreachEditor from './LeadOutreachEditor'
+import ConfirmModal from './ConfirmModal'
 import styles from './LeadDetailsScreen.module.css'
 
 function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
-}
-
-function CopyButton({ getText, label = 'Copy' }) {
-  const [copied, setCopied] = useState(false)
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(getText())
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch { /* clipboard unavailable */ }
-  }
-  return (
-    <button
-      className={`${styles.copyBtn} ${copied ? styles.copyBtnDone : ''}`}
-      onClick={handleCopy}
-    >
-      {copied ? '✓ Copied' : label}
-    </button>
-  )
 }
 
 function Section({ title, children }) {
@@ -42,8 +25,10 @@ function InfoRow({ label, children }) {
   )
 }
 
-export default function LeadDetailsScreen({ lead, onBack, onNotesChange }) {
+export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutreachSave }) {
   const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
+  const [outreachDirty, setOutreachDirty] = useState(false)
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
   const isFirstRender = useRef(true)
 
   useEffect(() => {
@@ -59,21 +44,21 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange }) {
     return () => clearTimeout(timer)
   }, [localNotes]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Guarded back navigation: warn if the outreach editor has unsaved changes.
+  function requestBack() {
+    if (outreachDirty) setShowLeaveConfirm(true)
+    else onBack()
+  }
+
   const domain = getDomain(lead.websiteUrl)
   const dateLabel = new Date(lead.dateSaved).toLocaleDateString(
     undefined, { month: 'long', day: 'numeric', year: 'numeric' }
   )
 
-  const fullEmail = [
-    lead.outreachSubject ? `Subject: ${lead.outreachSubject}` : null,
-    lead.outreachDraft ? `\n${lead.outreachDraft}` : null,
-    lead.outreachCTA ? `\n${lead.outreachCTA}` : null,
-  ].filter(Boolean).join('\n')
-
   return (
     <div className={styles.screen}>
       <div className={styles.topBar}>
-        <button className={styles.backBtn} onClick={onBack}>← Back to Saved Leads</button>
+        <button className={styles.backBtn} onClick={requestBack}>← Back to Saved Leads</button>
         <div className={styles.heading}>
           <h2 className={styles.title}>{domain}</h2>
           {lead.businessName && <span className={styles.subtitle}>{lead.businessName}</span>}
@@ -124,44 +109,13 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange }) {
           </Section>
         )}
 
-        {(lead.outreachSubject || lead.outreachDraft || lead.outreachCTA) ? (
-          <Section title="Outreach Draft">
-            {lead.outreachSubject && (
-              <div className={styles.outreachField}>
-                <div className={styles.outreachFieldHeader}>
-                  <span className={styles.fieldLabel}>Subject</span>
-                  <CopyButton getText={() => lead.outreachSubject} />
-                </div>
-                <p className={styles.fieldText}>{lead.outreachSubject}</p>
-              </div>
-            )}
-            {lead.outreachDraft && (
-              <div className={styles.outreachField}>
-                <div className={styles.outreachFieldHeader}>
-                  <span className={styles.fieldLabel}>Body</span>
-                  <CopyButton getText={() => lead.outreachDraft} label="Copy Body" />
-                </div>
-                <p className={styles.preText}>{lead.outreachDraft}</p>
-              </div>
-            )}
-            {lead.outreachCTA && (
-              <div className={styles.outreachField}>
-                <div className={styles.outreachFieldHeader}>
-                  <span className={styles.fieldLabel}>Call to Action</span>
-                  <CopyButton getText={() => lead.outreachCTA} />
-                </div>
-                <p className={styles.fieldText}>{lead.outreachCTA}</p>
-              </div>
-            )}
-            {fullEmail && (
-              <CopyButton getText={() => fullEmail} label="Copy Full Email" />
-            )}
-          </Section>
-        ) : (
-          <Section title="Outreach Draft">
-            <p className={styles.empty}>No outreach draft saved. Generate one from the Audit screen.</p>
-          </Section>
-        )}
+        <Section title="Outreach Draft">
+          <LeadOutreachEditor
+            lead={lead}
+            onSaveOutreach={onOutreachSave}
+            onDirtyChange={setOutreachDirty}
+          />
+        </Section>
 
         <Section title="Notes">
           <textarea
@@ -175,9 +129,19 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange }) {
         </Section>
 
         <div className={styles.actions}>
-          <button className={styles.backBtnLarge} onClick={onBack}>← Back to Saved Leads</button>
+          <button className={styles.backBtnLarge} onClick={requestBack}>← Back to Saved Leads</button>
         </div>
       </div>
+
+      {showLeaveConfirm && (
+        <ConfirmModal
+          message="You have unsaved outreach changes. Leave without saving?"
+          confirmLabel="Leave Without Saving"
+          cancelLabel="Stay Here"
+          onConfirm={() => { setShowLeaveConfirm(false); onBack() }}
+          onCancel={() => setShowLeaveConfirm(false)}
+        />
+      )}
     </div>
   )
 }

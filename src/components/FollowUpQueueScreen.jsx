@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import FollowUpCard from './FollowUpCard'
 import LeadDetailsScreen from './LeadDetailsScreen'
-import { updateLead } from '../services/leadStorage'
+import { updateLead, saveOutreachDraft } from '../services/leadStorage'
 import { isFollowUpDue, getFollowUpUpdate, getDismissUpdate } from '../utils/followUp'
 import styles from './FollowUpQueueScreen.module.css'
 
@@ -24,12 +24,17 @@ export default function FollowUpQueueScreen({ leads, onBack, onLeadsChange }) {
     onLeadsChange(updateLead(id, getDismissUpdate()))
   }
 
+  function handleOutreachSave(id, draft) {
+    onLeadsChange(saveOutreachDraft(id, draft))
+  }
+
   if (selectedLead) {
     return (
       <LeadDetailsScreen
         lead={selectedLead}
         onBack={() => setSelectedLeadId(null)}
         onNotesChange={handleNotesChange}
+        onOutreachSave={handleOutreachSave}
       />
     )
   }

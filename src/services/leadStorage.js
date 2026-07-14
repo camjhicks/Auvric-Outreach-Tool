@@ -112,6 +112,24 @@ export function updateLead(id, updates) {
   return leads
 }
 
+// Persist an edited outreach draft onto a saved lead.
+// Status rule: a lead still in 'New' advances to 'Draft Generated'; any other
+// status is preserved. Follow-up / contacted fields are never touched here.
+export function saveOutreachDraft(id, { outreachSubject, outreachDraft, outreachCTA }) {
+  const leads = getLeads().map(l => {
+    if (l.id !== id) return l
+    return {
+      ...l,
+      outreachSubject: outreachSubject ?? '',
+      outreachDraft: outreachDraft ?? '',
+      outreachCTA: outreachCTA ?? '',
+      status: l.status === 'New' ? 'Draft Generated' : l.status,
+    }
+  })
+  setLeads(leads)
+  return leads
+}
+
 export function deleteLead(id) {
   const leads = getLeads().filter(l => l.id !== id)
   setLeads(leads)

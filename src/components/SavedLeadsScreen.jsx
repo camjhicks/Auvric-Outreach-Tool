@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import LeadCard from './LeadCard'
 import LeadDetailsScreen from './LeadDetailsScreen'
 import SearchBar from './SearchBar'
-import { updateLead, deleteLead, STATUS_OPTIONS } from '../services/leadStorage'
+import { updateLead, deleteLead, saveOutreachDraft, STATUS_OPTIONS } from '../services/leadStorage'
 import { downloadLeadsCSV } from '../utils/exportCsv'
 import { getFollowUpUpdate } from '../utils/followUp'
 import styles from './SavedLeadsScreen.module.css'
@@ -38,12 +38,17 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
     onLeadsChange(deleteLead(id))
   }
 
+  function handleOutreachSave(id, draft) {
+    onLeadsChange(saveOutreachDraft(id, draft))
+  }
+
   if (selectedLead) {
     return (
       <LeadDetailsScreen
         lead={selectedLead}
         onBack={() => setSelectedLeadId(null)}
         onNotesChange={handleNotesChange}
+        onOutreachSave={handleOutreachSave}
       />
     )
   }
