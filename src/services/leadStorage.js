@@ -51,6 +51,15 @@ function migrateLead(lead) {
     leadPriority: lead.leadPriority ?? null,
     scoreBreakdown: lead.scoreBreakdown ?? [],
     pagesChecked: lead.pagesChecked ?? [],
+    // Lead Discovery metadata (null for manually-entered / single-audit leads)
+    phone: lead.phone ?? null,
+    address: lead.address ?? null,
+    rating: lead.rating ?? null,
+    reviewCount: lead.reviewCount ?? null,
+    googlePlaceId: lead.googlePlaceId ?? null,
+    primaryType: lead.primaryType ?? null,
+    businessStatus: lead.businessStatus ?? null,
+    discoverySource: lead.discoverySource ?? null,
   }
 }
 
@@ -143,8 +152,13 @@ export function isLeadSaved(websiteUrl) {
 // Batch-save bulk audit results into the lead system.
 // Skips results that duplicate an existing lead (by normalized URL) or
 // that duplicate each other within the same batch.
+//
+// `discoveryByUrl` (optional) is a Map keyed by normalizeLeadUrl(...) of a
+// DiscoveryBusiness. When a result matches (by its requested URL), the approved
+// discovery metadata is merged in. Audit-derived values win over empty discovery
+// values — discovery only fills fields the audit doesn't provide.
 // Returns { savedCount, skippedCount, leads }.
-export function saveBulkLeads(results) {
+export function saveBulkLeads(results, discoveryByUrl = null) {
   const existing = getLeads()
   const existingNormalized = new Set(existing.map(l => normalizeLeadUrl(l.websiteUrl)))
 
@@ -161,10 +175,21 @@ export function saveBulkLeads(results) {
     }
     batchSeen.add(normUrl)
     const emails = result.emailsFound ?? []
+
+    // Match discovery metadata by the URL we requested (pre-redirect), falling
+    // back to the final URL. Null when this was a manually-entered URL.
+    const matchKey = normalizeLeadUrl(result.requestedUrl ?? result.normalizedUrl)
+    const meta = discoveryByUrl?.get?.(matchKey) ?? null
+
+    // Prefer an audit-derived business name; fall back to discovery. Never let an
+    // empty discovery value clobber a real audit value.
+    const auditName = typeof result.businessName === 'string' ? result.businessName.trim() : ''
+    const businessName = auditName || (meta?.businessName ?? '')
+
     newLeads.push({
       id: crypto.randomUUID(),
       websiteUrl: result.normalizedUrl,
-      businessName: '',
+      businessName,
       industry: '',
       dateSaved: new Date().toISOString(),
       emailsFound: emails,
@@ -182,6 +207,15 @@ export function saveBulkLeads(results) {
       leadScore: result.leadScore ?? null,
       leadPriority: result.leadPriority ?? null,
       scoreBreakdown: result.scoreBreakdown ?? [],
+      // Discovery metadata (null when not sent from Lead Discovery)
+      phone: meta?.phone ?? null,
+      address: meta?.address ?? null,
+      rating: meta?.rating ?? null,
+      reviewCount: meta?.reviewCount ?? null,
+      googlePlaceId: meta?.googlePlaceId ?? null,
+      primaryType: meta?.primaryType ?? null,
+      businessStatus: meta?.businessStatus ?? null,
+      discoverySource: meta?.discoverySource ?? null,
     })
     savedCount++
   }

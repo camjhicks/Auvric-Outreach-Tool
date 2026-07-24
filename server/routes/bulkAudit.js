@@ -35,12 +35,15 @@ router.post('/', async (req, res) => {
   const settled = await Promise.allSettled(normalized.map(url => auditWebsite(url)))
 
   const results = settled.map((outcome, i) => {
+    // requestedUrl is the exact URL we asked to audit (pre-redirect). It lets the
+    // client match results back to discovery records regardless of redirects.
     if (outcome.status === 'fulfilled') {
-      return outcome.value
+      return { ...outcome.value, requestedUrl: normalized[i] }
     }
     // auditWebsite never throws, but guard anyway
     return {
       normalizedUrl: normalized[i],
+      requestedUrl: normalized[i],
       success: false,
       accessError: true,
       errorMessage: 'Unexpected error during audit.',

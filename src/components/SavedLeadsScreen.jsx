@@ -42,17 +42,8 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
     onLeadsChange(saveOutreachDraft(id, draft))
   }
 
-  if (selectedLead) {
-    return (
-      <LeadDetailsScreen
-        lead={selectedLead}
-        onBack={() => setSelectedLeadId(null)}
-        onNotesChange={handleNotesChange}
-        onOutreachSave={handleOutreachSave}
-      />
-    )
-  }
-
+  // Hooks must run unconditionally — keep this useMemo above the early return
+  // for the details view (otherwise the hook count changes and React throws).
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return leads.filter(l => {
@@ -70,6 +61,17 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
       )
     })
   }, [leads, query, statusFilter])
+
+  if (selectedLead) {
+    return (
+      <LeadDetailsScreen
+        lead={selectedLead}
+        onBack={() => setSelectedLeadId(null)}
+        onNotesChange={handleNotesChange}
+        onOutreachSave={handleOutreachSave}
+      />
+    )
+  }
 
   return (
     <div className={styles.screen}>

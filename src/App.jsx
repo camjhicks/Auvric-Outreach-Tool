@@ -22,6 +22,7 @@ import styles from './App.module.css'
 export default function App() {
   const [screen, setScreen] = useState('audit') // 'audit' | 'leads' | 'queue' | 'bulk' | 'discovery'
   const [bulkPrefill, setBulkPrefill] = useState('') // URLs seeded into Bulk Audit
+  const [bulkDiscovery, setBulkDiscovery] = useState([]) // DiscoveryBusiness[] carried from Lead Discovery
   const [auditResult, setAuditResult] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [inputError, setInputError] = useState(null)
@@ -107,16 +108,20 @@ export default function App() {
     setLeads(updatedLeads)
   }
 
-  // Manual navigation to Bulk Audit starts with a clean (empty) input.
+  // Manual navigation to Bulk Audit starts with a clean (empty) input and no
+  // carried discovery metadata.
   function goBulk() {
     setBulkPrefill('')
+    setBulkDiscovery([])
     setScreen('bulk')
   }
 
-  // Lead Discovery → Bulk Audit: seed the input with selected website URLs.
-  // Does NOT start the audit — the user reviews/edits the prefilled list first.
-  function handleSendToBulk(urls) {
-    setBulkPrefill(urls.join('\n'))
+  // Lead Discovery → Bulk Audit: seed the input with selected website URLs and
+  // carry the matching discovery metadata. Does NOT start the audit — the user
+  // reviews/edits the prefilled list first.
+  function handleSendToBulk(businesses) {
+    setBulkPrefill(businesses.map(b => b.websiteUrl).join('\n'))
+    setBulkDiscovery(businesses)
     setScreen('bulk')
   }
 
@@ -158,6 +163,7 @@ export default function App() {
           leads={leads}
           onLeadsChange={handleLeadsChange}
           initialInput={bulkPrefill}
+          discoveryBusinesses={bulkDiscovery}
         />
       </div>
     )

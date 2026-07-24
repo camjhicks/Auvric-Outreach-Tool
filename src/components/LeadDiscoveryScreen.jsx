@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { discoverLeads } from '../services/leadDiscoveryApi'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
+import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
 import styles from './LeadDiscoveryScreen.module.css'
 
@@ -108,15 +109,19 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
 
   function handleAuditSelected() {
     if (selected.size === 0) return
-    const urls = []
+    // Hand off small typed discovery objects (URL + approved metadata), deduped
+    // by normalized website URL, so the metadata survives the audit + save flow.
+    const out = []
     const seen = new Set()
     for (const b of businesses) {
       if (!selected.has(b.providerId) || !b.normalizedUrl) continue
       if (seen.has(b.normalizedUrl)) continue
+      const discovery = toDiscoveryBusiness(b)
+      if (!discovery) continue
       seen.add(b.normalizedUrl)
-      urls.push(b.normalizedUrl)
+      out.push(discovery)
     }
-    if (urls.length > 0) onSendToBulk(urls)
+    if (out.length > 0) onSendToBulk(out)
   }
 
   return (

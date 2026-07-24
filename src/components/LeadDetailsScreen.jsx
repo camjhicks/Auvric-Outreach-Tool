@@ -7,6 +7,13 @@ function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
+const STATUS_LABEL = {
+  OPERATIONAL: 'Operational',
+  CLOSED_TEMPORARILY: 'Temporarily closed',
+  CLOSED_PERMANENTLY: 'Permanently closed',
+}
+const SOURCE_LABEL = { google_places: 'Google Places' }
+
 function Section({ title, children }) {
   return (
     <section className={styles.section}>
@@ -55,6 +62,11 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
     undefined, { month: 'long', day: 'numeric', year: 'numeric' }
   )
 
+  const hasDiscovery = !!(
+    lead.discoverySource || lead.phone || lead.address || lead.primaryType ||
+    lead.rating != null || lead.businessStatus || lead.googlePlaceId
+  )
+
   return (
     <div className={styles.screen}>
       <div className={styles.topBar}>
@@ -76,6 +88,31 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
           {lead.industry && <InfoRow label="Industry">{lead.industry}</InfoRow>}
           <InfoRow label="Saved">{dateLabel}</InfoRow>
         </Section>
+
+        {hasDiscovery && (
+          <Section title="Business Details">
+            {lead.phone && <InfoRow label="Phone">{lead.phone}</InfoRow>}
+            {lead.address && <InfoRow label="Address">{lead.address}</InfoRow>}
+            {lead.primaryType && <InfoRow label="Type">{lead.primaryType}</InfoRow>}
+            {lead.rating != null && (
+              <InfoRow label="Rating">
+                ★ {lead.rating}
+                {lead.reviewCount != null && ` (${lead.reviewCount} review${lead.reviewCount !== 1 ? 's' : ''})`}
+              </InfoRow>
+            )}
+            {lead.businessStatus && (
+              <InfoRow label="Status">
+                {STATUS_LABEL[lead.businessStatus] ?? lead.businessStatus}
+              </InfoRow>
+            )}
+            {lead.googlePlaceId && <InfoRow label="Place ID">{lead.googlePlaceId}</InfoRow>}
+            {lead.discoverySource && (
+              <InfoRow label="Source">
+                {SOURCE_LABEL[lead.discoverySource] ?? lead.discoverySource}
+              </InfoRow>
+            )}
+          </Section>
+        )}
 
         <Section title="Contact Information">
           {lead.emailsFound.length === 0 ? (

@@ -41,7 +41,7 @@ function parseInput(text) {
   return { valid: capped, warnings }
 }
 
-export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, initialInput = '' }) {
+export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, initialInput = '', discoveryBusinesses = [] }) {
   const [input, setInput] = useState(initialInput)
   const [isLoading, setIsLoading] = useState(false)
   const [results, setResults] = useState(null)
@@ -58,6 +58,16 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
     () => new Set(leads.map(l => normalizeLeadUrl(l.websiteUrl))),
     [leads]
   )
+
+  // Discovery metadata carried from Lead Discovery, keyed by normalized URL so
+  // audit results can be matched back to their business record on save.
+  const discoveryByUrl = useMemo(() => {
+    const m = new Map()
+    for (const b of discoveryBusinesses) {
+      if (b?.websiteUrl) m.set(normalizeLeadUrl(b.websiteUrl), b)
+    }
+    return m
+  }, [discoveryBusinesses])
 
   async function handleStart() {
     if (valid.length === 0 || isLoading) return
@@ -100,7 +110,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
   function handleSaveSelected() {
     if (selected.size === 0 || !results) return
     const selectedResults = results.filter(r => selected.has(normalizeLeadUrl(r.normalizedUrl)))
-    const { savedCount, skippedCount, leads: updatedLeads } = saveBulkLeads(selectedResults)
+    const { savedCount, skippedCount, leads: updatedLeads } = saveBulkLeads(selectedResults, discoveryByUrl)
     onLeadsChange(updatedLeads)
     setSelected(new Set())
     if (skippedCount === 0) {
