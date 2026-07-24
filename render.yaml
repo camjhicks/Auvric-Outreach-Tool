@@ -1,0 +1,35 @@
+# Render deployment blueprint for Auvric Scout — a single web service that
+# builds the Vite frontend and serves it alongside the Express API.
+#
+# Secrets are NOT stored here. Values marked `sync: false` must be set in the
+# Render dashboard (Environment tab) so keys never touch the repository.
+services:
+  - type: web
+    name: auvric-scout
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Server secrets — set these in the Render dashboard, never in this file.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      # Optional overrides (safe to omit):
+      - key: OUTREACH_MODEL
+        sync: false
+      - key: JSON_BODY_LIMIT
+        sync: false
+      - key: RATE_LIMIT_AUDIT
+        sync: false
+      - key: RATE_LIMIT_BULK
+        sync: false
+      - key: RATE_LIMIT_DISCOVER
+        sync: false
+      - key: RATE_LIMIT_OUTREACH
+        sync: false

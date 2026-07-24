@@ -1,23 +1,22 @@
 import { extractEmails } from './extractEmails.js'
 import { extractInternalLinks } from './extractInternalLinks.js'
+import { safeFetch } from './safeFetch.js'
 
 const PAGE_TIMEOUT_MS = 8_000
 const MAX_EXTRA_PAGES = 5
+const USER_AGENT = 'Mozilla/5.0 (compatible; AuvricScout/1.0)'
 
 async function fetchPage(url) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS)
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AuvricScout/1.0)' },
+    // safeFetch applies SSRF protection (and redirect re-validation) per page.
+    const { response } = await safeFetch(url, {
+      timeoutMs: PAGE_TIMEOUT_MS,
+      headers: { 'User-Agent': USER_AGENT },
     })
-    if (!res.ok) return null
-    return await res.text()
+    if (!response.ok) return null
+    return await response.text()
   } catch {
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }
 
