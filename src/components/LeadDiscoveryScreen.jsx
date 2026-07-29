@@ -1,10 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { discoverLeads } from '../services/leadDiscoveryApi'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
 import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config/niches'
 import { qualifyBusiness } from '../utils/qualification'
 import { dedupeAndValidate } from '../utils/discoveryDedup'
+import {
+  DEFAULT_FILTERS, applyFilters, sortBusinesses, pruneSelection, computeSummary, isAuditEligible,
+} from '../utils/discoveryFilters'
+import DiscoveryFilters from './DiscoveryFilters'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
 import styles from './LeadDiscoveryScreen.module.css'
 
@@ -26,30 +30,43 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null) // { query, businesses, totalFound }
   const [selected, setSelected] = useState(new Set()) // providerIds
+  // Filter/sort state (component-local; see README for the persistence decision).
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
 
   const nicheSearch = useMemo(
     () => resolveNicheSearch(nicheId, customPhrase),
     [nicheId, customPhrase]
   )
 
-  // Enrich → validate/dedupe → qualify → sort by qualification score.
-  const businesses = useMemo(() => {
-    if (!result) return []
+  // Enrich → validate/dedupe → qualify (unsorted, unfiltered). Pure; no mutation.
+  const { validQualified, excludedInvalidDup } = useMemo(() => {
+    if (!result) return { validQualified: [], excludedInvalidDup: 0 }
     const enriched = result.businesses.map(b => {
       const normalizedUrl = normalizeWebsiteUrl(b.websiteUrl)
       const hasWebsite = normalizedUrl != null
       return { ...b, normalizedUrl, hasWebsite, eligible: hasWebsite }
     })
-    // Drop invalid + duplicate records (Place ID first; valid no-website kept).
-    const { kept } = dedupeAndValidate(enriched)
-    // Deterministic qualification for each kept record (does not mutate input).
+    const { kept, excluded } = dedupeAndValidate(enriched)
     const qualified = kept.map(b => ({ ...b, qualification: qualifyBusiness(b, result.niche) }))
-    // 15A2 sorts by qualification score descending (stable) — no filter/sort UI
-    // controls yet (that is Milestone 15A3).
-    return [...qualified].sort(
-      (a, b) => (b.qualification.qualificationScore ?? -1) - (a.qualification.qualificationScore ?? -1)
-    )
+    return { validQualified: qualified, excludedInvalidDup: excluded.length }
   }, [result])
+
+  // Apply filters, then sort. Both pure — the source arrays are never mutated.
+  const { visible: filteredVisible, counts: filterCounts } = useMemo(
+    () => applyFilters(validQualified, filters), [validQualified, filters]
+  )
+  const businesses = useMemo(
+    () => sortBusinesses(filteredVisible, filters.sort), [filteredVisible, filters.sort]
+  )
+
+  // Safety: when filters change the visible set, drop any selection now hidden so
+  // a filtered-out business can never be accidentally audited (documented choice A).
+  useEffect(() => {
+    setSelected(prev => {
+      const pruned = pruneSelection(prev, businesses)
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [businesses])
 
   // Normalized URLs claimed by the current selection — blocks selecting a
   // second business that resolves to the same website.
@@ -136,6 +153,11 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     setSelected(new Set())
   }
 
+  // Reset only the result filters/sort — never the niche, location, or results.
+  function handleResetFilters() {
+    setFilters(DEFAULT_FILTERS)
+  }
+
   function handleAuditSelected() {
     if (selected.size === 0) return
     // Hand off small typed discovery objects (URL + approved metadata), deduped
@@ -152,6 +174,17 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     }
     if (out.length > 0) onSendToBulk(out)
   }
+
+  const summary = computeSummary({
+    totalReturned: result?.totalFound,
+    valid: validQualified,
+    visible: businesses,
+    excludedInvalidDup,
+    selectedCount: selected.size,
+    filterCounts,
+  })
+  const activeFilterCount = ['reviewPreset', 'ratingPreset', 'websiteStatus', 'tierFilter', 'excludeChains', 'excludeClosed']
+    .filter(k => filters[k] !== DEFAULT_FILTERS[k]).length
 
   return (
     <div className={styles.screen}>
@@ -240,45 +273,80 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
         </div>
       )}
 
-      {!isLoading && result && (
+      {!isLoading && result && result.businesses.length === 0 && (
+        <div className={styles.emptyResults}>
+          <p className={styles.emptyText}>
+            No businesses were found for this search. Try a broader niche or location.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && result && result.businesses.length > 0 && validQualified.length === 0 && (
+        <div className={styles.emptyResults}>
+          <p className={styles.emptyText}>
+            No valid businesses remained after removing duplicate or incomplete records.
+          </p>
+        </div>
+      )}
+
+      {!isLoading && result && validQualified.length > 0 && (
         <>
           <div className={styles.resultsSummary}>
             <span className={styles.resultsCount}>
-              {result.totalFound} business{result.totalFound !== 1 ? 'es' : ''} found
+              Showing {summary.visible} of {summary.valid} results
             </span>
             {result.niche?.selectedNicheLabel && (
               <span className={styles.nicheBadge}>{result.niche.selectedNicheLabel}</span>
             )}
             <span className={styles.resultsQuery}>
-              {result.query.industry} in {result.query.location}
+              {summary.withWebsite} with website{summary.withWebsite !== 1 ? 's' : ''} · {summary.withoutWebsite} without · {summary.selected} selected
             </span>
           </div>
+
+          <details className={styles.breakdown}>
+            <summary className={styles.breakdownToggle}>
+              Result breakdown ({summary.totalReturned} returned by Google)
+            </summary>
+            <ul className={styles.breakdownList}>
+              <li>Valid after dedupe / validation: {summary.valid}</li>
+              <li>Excluded by filters: {summary.excludedByFilters}</li>
+              <li>Hidden — closed: {filterCounts.closed}</li>
+              <li>Hidden — likely chains: {filterCounts.chain}</li>
+              <li>Hidden — qualification tier: {filterCounts.tier}</li>
+              <li>Hidden — review filter: {filterCounts.review}</li>
+              <li>Hidden — rating filter: {filterCounts.rating}</li>
+              <li>Hidden — website filter: {filterCounts.website}</li>
+              <li>Duplicate / invalid records removed: {summary.excludedInvalidDup}</li>
+            </ul>
+          </details>
+
+          <DiscoveryFilters
+            filters={filters}
+            onChange={setFilters}
+            onReset={handleResetFilters}
+            activeCount={activeFilterCount}
+          />
+
+          <p className={styles.attribution}>Powered by Google</p>
 
           {businesses.length === 0 ? (
             <div className={styles.emptyResults}>
               <p className={styles.emptyText}>
-                No businesses were found for this search. Try a broader industry or location.
+                All {summary.valid} result{summary.valid !== 1 ? 's are' : ' is'} hidden by your current filters.
               </p>
+              <button type="button" className={styles.resetInline} onClick={handleResetFilters}>
+                Reset filters
+              </button>
             </div>
           ) : (
             <>
               <div className={styles.selectionBar}>
                 <div className={styles.selectionControls}>
-                  <button
-                    type="button"
-                    className={styles.linkBtn}
-                    onClick={handleSelectAll}
-                    disabled={eligibleCount === 0}
-                  >
-                    Select All Eligible
+                  <button type="button" className={styles.linkBtn} onClick={handleSelectAll} disabled={eligibleCount === 0}>
+                    Select all eligible
                   </button>
-                  <button
-                    type="button"
-                    className={styles.linkBtn}
-                    onClick={handleClearSelection}
-                    disabled={selected.size === 0}
-                  >
-                    Clear Selection
+                  <button type="button" className={styles.linkBtn} onClick={handleClearSelection} disabled={selected.size === 0}>
+                    Clear selection
                   </button>
                   <span className={styles.selectedCount}>Selected: {selected.size}</span>
                 </div>
@@ -295,8 +363,6 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
               {atCap && (
                 <p className={styles.capNote}>You can audit up to {MAX_SELECTION} websites at a time.</p>
               )}
-
-              <p className={styles.attribution}>Powered by Google</p>
 
               <div className={styles.grid}>
                 {businesses.map(b => (

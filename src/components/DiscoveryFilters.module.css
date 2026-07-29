@@ -1,0 +1,139 @@
+.panel {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  background: none;
+  border: none;
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.3rem 0.2rem;
+}
+
+.toggle:hover {
+  color: var(--color-primary);
+}
+
+.sortInline {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.srLabel {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.body {
+  border-top: 1px solid var(--color-border);
+  padding: 0.85rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.customRow {
+  display: flex;
+  gap: 0.6rem;
+  grid-column: 1 / -1;
+}
+
+.customRow .field { flex: 1; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.select,
+.input {
+  width: 100%;
+  background: #12141e;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.5rem 0.6rem;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  min-height: 40px; /* comfortable touch target */
+}
+
+.select:focus,
+.input:focus {
+  border-color: var(--color-primary);
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.checkLabel input {
+  width: 18px;
+  height: 18px;
+}
+
+.reset {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.reset:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+@media (max-width: 480px) {
+  .bar { align-items: stretch; }
+  .grid { grid-template-columns: 1fr 1fr; }
+}

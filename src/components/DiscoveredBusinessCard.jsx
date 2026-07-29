@@ -98,7 +98,27 @@ export default function DiscoveredBusinessCard({
             <span className={styles.chip} style={{ color: CHAIN_COLOR[qualification.chainRiskLevel] }}>
               {CHAIN_LABEL[qualification.chainRiskLevel] ?? 'Chain risk: unknown'}
             </span>
+            <span className={styles.chip}>{eligible ? 'Has website' : 'No website'}</span>
           </div>
+
+          {qualification.scoringBreakdown?.length > 0 && (
+            <details className={styles.whyDetails}>
+              <summary className={styles.whySummary}>Why this score?</summary>
+              <ul className={styles.factorList}>
+                {qualification.scoringBreakdown.map((fct, i) => (
+                  <li key={i} className={styles.factorItem}>
+                    <span className={styles.factorImpact}>
+                      {fct.scoreImpact > 0 ? `+${fct.scoreImpact}` : `${fct.scoreImpact}`} pts
+                    </span>
+                    <span className={styles.factorText}>
+                      <strong>{fct.label}:</strong> {fct.evidence}
+                      <span className={styles.factorConf}> · {fct.confidence} confidence</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 

@@ -128,6 +128,49 @@
   white-space: nowrap;
 }
 
+/* "Why this score?" expandable breakdown */
+.whyDetails {
+  font-size: 0.78rem;
+}
+
+.whySummary {
+  cursor: pointer;
+  color: var(--color-primary);
+  font-weight: 600;
+  padding: 0.2rem 0;
+}
+
+.factorList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0 0.1rem;
+}
+
+.factorItem {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.factorImpact {
+  flex-shrink: 0;
+  min-width: 52px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.factorText {
+  color: var(--color-muted);
+  line-height: 1.4;
+}
+
+.factorConf {
+  color: #4a4f66;
+}
+
 .rows {
   display: flex;
   flex-direction: column;

@@ -143,9 +143,71 @@ the record was never evaluated.
 - Not available from discovery, and never fabricated: owner name, exact years in
   business, confirmed local ownership, Google Ads activity, hiring activity.
 
-Discovery results are sorted by qualification score (descending) and each card shows
-score, tier, primary reason, review band, and chain risk. Qualification metadata
-persists onto leads saved from discovery. **Next:** 15A3 Discovery UI & Ranking Upgrade.
+Qualification metadata persists onto leads saved from discovery.
+
+## Discovery filters, sorting & ranking
+
+Lead Discovery has a collapsible **Filters & sort** panel (progressive disclosure;
+mobile-friendly) driven by pure utilities in `src/utils/discoveryFilters.js` — no
+filter/sort logic lives in cards, and the qualified result objects are never mutated.
+
+**Filters:**
+- **Review count** — Any · 10+ · 25+ · 25–500 (ideal, matches the configured review
+  band) · 100+ · Custom min/max.
+- **Minimum rating** — Any · 3.5+ · 4.0+ · 4.5+ · Custom.
+- **Website** — All · Has website · No website (no-website records stay visible but
+  remain unselectable for Bulk Audit).
+- **Qualification tier** — All · Priority only · Qualified & above · Review Manually &
+  above · Exclude Low Priority · Exclude Disqualified (uses the centralized tier rules).
+- **Exclude likely chains** — hides `high` chain risk; **medium risk is retained** for
+  manual review (never labeled "locally owned").
+- **Exclude closed businesses** — hides permanently *and* temporarily closed from the
+  visible list; they remain in the underlying result set and the breakdown counts.
+
+**Unknown-value behavior (documented):** under an **active** review-count or rating
+filter, records with **unknown** review count / rating are **excluded** (we can't
+verify they meet the minimum). Under "Any", they're included. Missing values are never
+treated as zero.
+
+**Chosen defaults** (outreach-focused, but deliberately not over-hiding):
+Review 10+ · Rating 4.0+ · Website All · **Qualification: Exclude Disqualified** ·
+Exclude likely chains ✓ · Exclude closed ✓ · Sort: qualification score high→low.
+Reasoning: 10+/4.0+ favor real demand and reputation; **"Exclude Disqualified" was
+chosen over the stricter "Qualified & above"** so Review-Manually and Low-Priority
+prospects (including many no-website / unknown-status leads) are **not** hidden by
+default — sorting surfaces the strongest first, and **Reset filters** restores these
+defaults without touching the niche, location, or search results.
+
+**Sorting modes:** qualification score (↑/↓), review count (↑/↓), rating (↑/↓), name
+(A–Z / Z–A). Default is score descending. Missing numeric values always sort **last**.
+**Deterministic tie-breakers** for equal primary keys: review count desc → rating desc
+→ name A–Z → original discovery order.
+
+**Selection under filtering:** only website businesses are selectable. When filters
+hide a selected record, it is **automatically deselected** (choice A — the option least
+likely to cause an accidental audit); Bulk Audit only ever receives currently-visible,
+eligible website businesses. "Select all eligible" selects only currently-visible
+eligible records (up to the 20-URL cap).
+
+**Result summary** (above the list): shows *X of Y results · N with websites · M
+without · S selected*, with an expandable breakdown (total returned by Google, valid
+after dedupe, and per-category exclusions: closed, chains, tier, review, rating,
+website, duplicate/invalid).
+
+**Result cards:** tier badge + numeric score, primary reason, then secondary chips
+(review band · chain risk · website status). A collapsible **"Why this score?"** shows
+each factor's label, point impact (with a `+`/`−` text sign — never color-only),
+evidence, and confidence. Unknown values are shown honestly; the card never claims a
+website is weak before an audit.
+
+**Mobile:** filters collapse into a panel, controls stack without horizontal overflow,
+touch targets are ≥40px, and score details stay collapsed by default so cards don't
+grow tall. **Filter/sort state is component-local** (simplest reliable choice for a
+single-user MVP; not persisted, and kept fully separate from saved-lead localStorage).
+
+**Reminder:** qualification scoring is **discovery-level only** — it does not evaluate
+website quality (that begins after an audit). **Next:** 15B Website Opportunity
+Intelligence.
 
 ## Local setup
 
