@@ -74,6 +74,60 @@
   margin-top: 0.05rem;
 }
 
+/* Qualification summary (15A2) */
+.qualification {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  background: #12141e;
+  border-radius: 8px;
+}
+
+.qualTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.qualScore {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.qualTier {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.qualReason {
+  font-size: 0.8rem;
+  color: var(--color-text);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.qualChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  padding: 0.12rem 0.5rem;
+  white-space: nowrap;
+}
+
 .rows {
   display: flex;
   flex-direction: column;

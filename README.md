@@ -65,6 +65,88 @@ raw Google response): `businessName`, `websiteUrl`, `phone`, `address`, `rating`
 **Next planned milestones:** 15A2 Qualification Engine · 15A3 Discovery UI & Ranking
 Upgrade · 15B Website Opportunity Intelligence · 15C No-Website Call List.
 
+## Qualification engine (deterministic)
+
+Every discovered business is scored **0–100** by a transparent, deterministic engine
+(no AI). The score answers **"Is this a realistic potential client for Auvric
+Digital?"** — it is **not** a website-quality score (that is Milestone 15B, after an
+audit). Config lives in `src/config/qualification.js`; pure logic in
+`src/utils/qualification.js`. Same input always yields the same result.
+
+**Formula:** `score = clamp(40 (base) + Σ factor impacts, 0, 100)`. Every impact is
+recorded in a `scoringBreakdown` entry (`factorId`, `label`, `scoreImpact`,
+`evidence`, `confidence`).
+
+| Factor | Impact |
+|---|---|
+| Review band — Very low (0–9) | **−10** |
+| Review band — Emerging (10–24) | **+8** |
+| Review band — **Ideal (25–500)** | **+22** (strongest demand signal) |
+| Review band — High volume (501+) | **+8** (never auto-outranks Ideal) |
+| Review band — Unknown (missing/malformed) | 0 (never treated as zero) |
+| Rating 4.5–5.0 | **+15** · 4.0–4.49 **+8** · 3.5–3.99 **−3** · <3.5 **−12** · missing 0 |
+| Rating dampener (positive impact ×, by review band) | very_low ×0.4 · emerging ×0.7 · ideal/high_volume ×1.0 · unknown ×0.5 |
+| Niche high-ticket weight | 3→**+12** · 2→**+6** · 1→**+2** · custom/none→0 (capped, never dominates) |
+| Phone present / missing | **+12 / −8** (phone matters most for call outreach) |
+| Website present / absent | **+5 / 0** (no-website is **not** penalized — 15C targets them) |
+| Address present | **+3** · Google Place ID present **+3** |
+| Status OPERATIONAL | **+8** · CLOSED_TEMPORARILY **−40** · CLOSED_PERMANENTLY → disqualify |
+
+**Rating is separate from review count** and its *positive* impact is dampened for
+small samples, so a 5.0 from 2 reviews cannot outrank a 4.7 from 150.
+
+**Qualification tiers** (numeric bands, then overrides):
+- **Priority** — score ≥ 75
+- **Qualified** — score ≥ 55
+- **Low Priority** — score < 55
+- **Review Manually** and **Disqualified** are override-driven (below).
+
+**Override rules (deterministic; override the numeric tier):**
+- **Disqualified** when: missing business name (invalid record); `CLOSED_PERMANENTLY`;
+  or a high-confidence recognized national brand. Disqualified forces score 0.
+- **Review Manually** when: `CLOSED_TEMPORARILY`; medium chain risk; or ≥2 critical
+  fields unknown (status/rating/reviews).
+- A single unknown status caps the tier at **Qualified** (never Priority without a
+  confirmed-operational listing).
+
+**Chain / corporate risk** (`chainRiskLevel` low/medium/high/unknown +
+`chainRiskReasons` + `chainRiskConfidence`): a small centralized seed list of
+national brands/domains is matched by **whole-token** name match (never unsafe
+substring — "Corkin" ≠ "Orkin") or exact/subdomain domain match → **high/high**.
+Franchise or multi-location wording → **medium/medium**. No signals → **low/low**
+("No verified chain indicators found"). No usable name → **unknown**. The engine
+**never** labels a business "locally owned" — absence of chain signals is not proof
+of local ownership.
+
+**Duplicate handling** (`src/utils/discoveryDedup.js`): Google Place ID is the
+strongest key (repeated ID → excluded). Records without a Place ID fall back to
+normalized-domain dedup among themselves only, so multi-location companies sharing a
+domain but with **distinct Place IDs are all kept**. Invalid (no-name) and malformed
+records are excluded; valid no-website records are always retained. Order is
+deterministic.
+
+**Evidence confidence** (`evidenceConfidence`: high/medium/low/unknown) reflects the
+**completeness of the fields used**, *not* the likelihood of a sale. `unknown` means
+the record was never evaluated.
+
+**Verified vs inferred vs unknown:**
+- *Verified evidence:* review count, rating, business status, Place ID, phone,
+  website — taken directly from Google Places.
+- *Deterministic inference:* niche budget weighting (niche-level, not the specific
+  business) and chain-risk signals (name/domain patterns).
+- *Unknown:* anything missing stays unknown — never invented.
+
+**Important caveats:**
+- The score does **not** predict a guaranteed sale — only whether a business is worth
+  investigating.
+- Website quality is **not** evaluated here; that happens after an audit (15B).
+- Not available from discovery, and never fabricated: owner name, exact years in
+  business, confirmed local ownership, Google Ads activity, hiring activity.
+
+Discovery results are sorted by qualification score (descending) and each card shows
+score, tier, primary reason, review band, and chain risk. Qualification metadata
+persists onto leads saved from discovery. **Next:** 15A3 Discovery UI & Ranking Upgrade.
+
 ## Local setup
 
 ```bash

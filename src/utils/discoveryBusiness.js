@@ -23,6 +23,17 @@ import { normalizeWebsiteUrl } from './normalizeWebsiteUrl'
  * @property {string|null} serviceFamily             null for custom searches
  * @property {number|null} highTicketWeight          null for custom searches
  * @property {boolean}     hasWebsite                always true for a DiscoveryBusiness
+ * @property {string|null} reviewBand                qualification metadata (15A2)
+ * @property {number|null} qualificationScore
+ * @property {string|null} qualificationTier
+ * @property {string|null} qualificationStatus
+ * @property {string|null} primaryQualificationReason
+ * @property {string[]}    disqualificationReasons
+ * @property {Array<object>} scoringBreakdown
+ * @property {string}      evidenceConfidence
+ * @property {string}      chainRiskLevel
+ * @property {string[]}    chainRiskReasons
+ * @property {string}      chainRiskConfidence
  */
 
 /**
@@ -43,6 +54,7 @@ export function toDiscoveryBusiness(result, niche = {}) {
   if (!websiteUrl) return null
 
   const n = niche ?? {}
+  const q = result.qualification ?? {}
   return {
     businessName: typeof result.businessName === 'string' ? result.businessName : '',
     websiteUrl,
@@ -61,5 +73,17 @@ export function toDiscoveryBusiness(result, niche = {}) {
     serviceFamily: n.serviceFamily ?? null,
     highTicketWeight: typeof n.highTicketWeight === 'number' ? n.highTicketWeight : null,
     hasWebsite: true, // a DiscoveryBusiness always has a usable website
+    // Qualification metadata (Milestone 15A2) — safe defaults when not evaluated
+    reviewBand: q.reviewBand ?? null,
+    qualificationScore: typeof q.qualificationScore === 'number' ? q.qualificationScore : null,
+    qualificationTier: q.qualificationTier ?? null,
+    qualificationStatus: q.qualificationStatus ?? null,
+    primaryQualificationReason: q.primaryQualificationReason ?? null,
+    disqualificationReasons: Array.isArray(q.disqualificationReasons) ? q.disqualificationReasons : [],
+    scoringBreakdown: Array.isArray(q.scoringBreakdown) ? q.scoringBreakdown : [],
+    evidenceConfidence: q.evidenceConfidence ?? 'unknown',
+    chainRiskLevel: q.chainRiskLevel ?? 'unknown',
+    chainRiskReasons: Array.isArray(q.chainRiskReasons) ? q.chainRiskReasons : [],
+    chainRiskConfidence: q.chainRiskConfidence ?? 'unknown',
   }
 }

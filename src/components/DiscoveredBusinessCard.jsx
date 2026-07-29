@@ -15,11 +15,26 @@ function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
+const TIER_COLOR = {
+  Priority: '#4ade80',
+  Qualified: '#60a5fa',
+  'Review Manually': '#fbbf24',
+  'Low Priority': '#fb923c',
+  Disqualified: '#f87171',
+}
+const REVIEW_BAND_LABEL = {
+  very_low: 'Very low reviews', emerging: 'Emerging', ideal: 'Ideal', high_volume: 'High volume', unknown: 'Reviews unknown',
+}
+const CHAIN_LABEL = { low: 'Chain risk: low', medium: 'Chain risk: medium', high: 'Chain risk: high', unknown: 'Chain risk: unknown' }
+const CHAIN_COLOR = { low: 'var(--color-muted)', medium: '#fbbf24', high: '#f87171', unknown: 'var(--color-muted)' }
+
 // `business` is the normalized provider-neutral shape.
+// `qualification` is the deterministic 15A2 result (may be null on old flows).
 // `eligible` = has a usable http/https website (computed by the parent).
 // `selectable` = eligible AND (selected OR under the selection cap).
 export default function DiscoveredBusinessCard({
   business,
+  qualification,
   eligible,
   selected,
   selectable,
@@ -59,6 +74,33 @@ export default function DiscoveredBusinessCard({
         )}
         <span className={styles.name}>{businessName || 'Unnamed business'}</span>
       </div>
+
+      {qualification && (
+        <div className={styles.qualification}>
+          <div className={styles.qualTop}>
+            {qualification.qualificationScore != null && (
+              <span className={styles.qualScore} style={{ color: TIER_COLOR[qualification.qualificationTier] ?? 'var(--color-text)' }}>
+                {qualification.qualificationScore}
+              </span>
+            )}
+            <span
+              className={styles.qualTier}
+              style={{ color: TIER_COLOR[qualification.qualificationTier] ?? 'var(--color-muted)', borderColor: TIER_COLOR[qualification.qualificationTier] ?? 'var(--color-border)' }}
+            >
+              {qualification.qualificationTier}
+            </span>
+          </div>
+          {qualification.primaryQualificationReason && (
+            <p className={styles.qualReason}>{qualification.primaryQualificationReason}</p>
+          )}
+          <div className={styles.qualChips}>
+            <span className={styles.chip}>{REVIEW_BAND_LABEL[qualification.reviewBand] ?? 'Reviews unknown'}</span>
+            <span className={styles.chip} style={{ color: CHAIN_COLOR[qualification.chainRiskLevel] }}>
+              {CHAIN_LABEL[qualification.chainRiskLevel] ?? 'Chain risk: unknown'}
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className={styles.rows}>
         {eligible ? (

@@ -68,6 +68,18 @@ function migrateLead(lead) {
     serviceFamily: lead.serviceFamily ?? null,
     highTicketWeight: lead.highTicketWeight ?? null,
     hasWebsite: lead.hasWebsite ?? Boolean(lead.websiteUrl),
+    // Qualification metadata (Milestone 15A2). Safe defaults for legacy records.
+    reviewBand: lead.reviewBand ?? null,
+    qualificationScore: lead.qualificationScore ?? null,
+    qualificationTier: lead.qualificationTier ?? null,
+    qualificationStatus: lead.qualificationStatus ?? null,
+    primaryQualificationReason: lead.primaryQualificationReason ?? null,
+    disqualificationReasons: lead.disqualificationReasons ?? [],
+    scoringBreakdown: lead.scoringBreakdown ?? [],
+    evidenceConfidence: lead.evidenceConfidence ?? 'unknown',
+    chainRiskLevel: lead.chainRiskLevel ?? 'unknown',
+    chainRiskReasons: lead.chainRiskReasons ?? [],
+    chainRiskConfidence: lead.chainRiskConfidence ?? 'unknown',
   }
 }
 
@@ -231,6 +243,18 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       serviceFamily: meta?.serviceFamily ?? null,
       highTicketWeight: typeof meta?.highTicketWeight === 'number' ? meta.highTicketWeight : null,
       hasWebsite: meta ? (meta.hasWebsite ?? true) : Boolean(result.normalizedUrl),
+      // Qualification metadata (Milestone 15A2)
+      reviewBand: meta?.reviewBand ?? null,
+      qualificationScore: typeof meta?.qualificationScore === 'number' ? meta.qualificationScore : null,
+      qualificationTier: meta?.qualificationTier ?? null,
+      qualificationStatus: meta?.qualificationStatus ?? null,
+      primaryQualificationReason: meta?.primaryQualificationReason ?? null,
+      disqualificationReasons: Array.isArray(meta?.disqualificationReasons) ? meta.disqualificationReasons : [],
+      scoringBreakdown: Array.isArray(meta?.scoringBreakdown) ? meta.scoringBreakdown : [],
+      evidenceConfidence: meta?.evidenceConfidence ?? 'unknown',
+      chainRiskLevel: meta?.chainRiskLevel ?? 'unknown',
+      chainRiskReasons: Array.isArray(meta?.chainRiskReasons) ? meta.chainRiskReasons : [],
+      chainRiskConfidence: meta?.chainRiskConfidence ?? 'unknown',
     })
     savedCount++
   }

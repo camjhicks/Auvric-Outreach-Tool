@@ -3,6 +3,8 @@ import { discoverLeads } from '../services/leadDiscoveryApi'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
 import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config/niches'
+import { qualifyBusiness } from '../utils/qualification'
+import { dedupeAndValidate } from '../utils/discoveryDedup'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
 import styles from './LeadDiscoveryScreen.module.css'
 
@@ -30,14 +32,23 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     [nicheId, customPhrase]
   )
 
-  // Enrich each business with a normalized website + eligibility flag.
+  // Enrich → validate/dedupe → qualify → sort by qualification score.
   const businesses = useMemo(() => {
     if (!result) return []
-    return result.businesses.map(b => {
+    const enriched = result.businesses.map(b => {
       const normalizedUrl = normalizeWebsiteUrl(b.websiteUrl)
       const hasWebsite = normalizedUrl != null
       return { ...b, normalizedUrl, hasWebsite, eligible: hasWebsite }
     })
+    // Drop invalid + duplicate records (Place ID first; valid no-website kept).
+    const { kept } = dedupeAndValidate(enriched)
+    // Deterministic qualification for each kept record (does not mutate input).
+    const qualified = kept.map(b => ({ ...b, qualification: qualifyBusiness(b, result.niche) }))
+    // 15A2 sorts by qualification score descending (stable) — no filter/sort UI
+    // controls yet (that is Milestone 15A3).
+    return [...qualified].sort(
+      (a, b) => (b.qualification.qualificationScore ?? -1) - (a.qualification.qualificationScore ?? -1)
+    )
   }, [result])
 
   // Normalized URLs claimed by the current selection — blocks selecting a
@@ -292,6 +303,7 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
                   <DiscoveredBusinessCard
                     key={b.providerId}
                     business={b}
+                    qualification={b.qualification}
                     eligible={b.eligible}
                     selected={selected.has(b.providerId)}
                     selectable={isSelectable(b)}
