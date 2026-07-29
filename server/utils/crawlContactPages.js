@@ -31,10 +31,12 @@ async function fetchPage(url) {
 export async function crawlContactPages(baseUrl, baseHtml) {
   const emailSet = new Set(extractEmails(baseHtml))
   const pagesChecked = [baseUrl]
+  // In-memory only — used to extract compact evidence, then discarded. Never persisted.
+  const pages = [{ url: baseUrl, html: baseHtml }]
 
   const candidates = extractInternalLinks(baseHtml, baseUrl).slice(0, MAX_EXTRA_PAGES)
   if (candidates.length === 0) {
-    return { emails: [...emailSet], pagesChecked }
+    return { emails: [...emailSet], pagesChecked, pages }
   }
 
   const results = await Promise.allSettled(candidates.map(url => fetchPage(url)))
@@ -43,11 +45,12 @@ export async function crawlContactPages(baseUrl, baseHtml) {
     const result = results[i]
     if (result.status === 'fulfilled' && result.value) {
       pagesChecked.push(candidates[i])
+      pages.push({ url: candidates[i], html: result.value })
       for (const email of extractEmails(result.value)) {
         emailSet.add(email)
       }
     }
   }
 
-  return { emails: [...emailSet], pagesChecked }
+  return { emails: [...emailSet], pagesChecked, pages }
 }

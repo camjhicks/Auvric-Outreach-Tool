@@ -209,6 +209,105 @@ single-user MVP; not persisted, and kept fully separate from saved-lead localSto
 website quality (that begins after an audit). **Next:** 15B Website Opportunity
 Intelligence.
 
+## Website Opportunity Intelligence (deterministic — Milestone 15B1)
+
+After a site is audited, a second **deterministic (no-AI)** engine scores **how much
+VERIFIED opportunity exists to improve that website's ability to generate calls, quote
+requests, appointments, or bookings.** Same evidence in → same 0–100 score out. Higher
+score = **more verified weakness = more opportunity**.
+
+**This is not the Discovery Qualification Score, and the two are never combined.**
+- *Discovery Qualification Score* answers "does this business look like a good local
+  service prospect worth auditing?" (reviews, rating, chain risk, closed status — from
+  Google metadata, **before** any audit).
+- *Website Opportunity Score* answers "how much room is there to improve THIS site's
+  booking/lead generation?" (from the audited pages themselves).
+- It does **not** predict whether the business will buy. A combined *Client Opportunity
+  Score* is deliberately deferred to **Milestone 15B2**.
+
+**How it's built.** The server extracts **compact, normalized evidence** from the
+audited pages (`server/utils/extractAuditEvidence.js`) — booleans, counts, short
+snippets, and de-duplicated host lists only. **Raw HTML is never returned, never sent
+over the wire, and never persisted.** The frontend engine
+(`src/utils/websiteOpportunity.js`), driven entirely by the central config
+(`src/config/websiteOpportunity.js`), interprets that evidence and produces a
+transparent, itemized result. Config is the single source of truth for every factor,
+point value, cap, threshold, and detection list.
+
+**Six evaluation categories** (each capped so no one area dominates; booking is
+weighted heaviest because Auvric sells booking optimization):
+
+| Category | Cap | Example factors (point impact) |
+| --- | --- | --- |
+| **A. Booking / contact friction** | 32 | no prominent CTA (10), CTA not in hero (5), phone hard to find (6), no form or booking (6), long contact form >7 fields (5), no next-step explained (4), + niche-gated: no quote path (8), no online scheduling (8), no emergency prominence (4) |
+| **B. Trust / credibility** | 22 | no reviews/testimonials (8), no certifications/licensed/insured (4), no guarantee/warranty (4), no service area (3), + niche-gated: no project proof (4), no financing (3) |
+| **C. Service clarity / conversion** | 16 | vague services (6), no service pages (4), weak hero (3) |
+| **D. Mobile / usability** | 14 | no viewport meta (8), unlabeled form inputs (4), >3 images missing alt (2) |
+| **E. Technical / accessibility basics** | 12 | missing/short title (4), no meta description (2), empty CTA links (3), insecure form / mixed content (3) |
+| **F. Template / platform** | 16 | LinkNow high (12) / medium (6); generic template high (8) / medium (4) |
+
+Category subtotals over a cap are recorded as an explicit `cap_<category>` adjustment
+line, so the itemized breakdown still **sums exactly** to the pre-clamp total; the final
+score is `clamp(sum, 0, 100)`. There is no double-counting — each factor fires at most
+once.
+
+**Booking-friction model.** The capped booking subtotal is scaled to 0–100 and mapped to
+a level — **Severe ≥75 · High ≥50 · Moderate ≥25 · Low** (and **Unknown** when the site
+couldn't be evaluated). Phone-only sites are handled with nuance: a visible phone number
+removes the "phone hard to find" penalty, but the absence of a form/booking or a
+niche-appropriate quote/scheduling path is still surfaced.
+
+**Opportunity tiers** (from the final score): **Major ≥70 · Strong ≥50 · Moderate ≥32 ·
+Minor ≥16 · Limited <16**, plus **Unable to Evaluate** for blocked/failed audits.
+
+**LinkNow detector** (`detectLinkNow`) — conservative and evidence-gated. **High**
+confidence requires strong direct evidence: a LinkNow asset domain
+(`linknowmedia.com`, `lnmstatic.com`, `lnimg.com`, `linknow.com`) in page assets, a
+LinkNow `generator` meta tag, or an explicit "LinkNow Media" / "powered by LinkNow"
+footer attribution. A bare "linknow" token elsewhere in the footer is only **medium**.
+No signal → not detected. It's designed to avoid false positives (e.g. the phrase
+"link now" with a space does not match).
+
+**Generic-template detector** (`detectGenericTemplate`) — signals are a known
+website-builder generator (Wix/Squarespace/Weebly/Duda/GoDaddy/WordPress), placeholder
+copy ("lorem ipsum", "welcome to our website", …), a third-party "made by" footer
+attribution, and very thin service content. **High** risk needs **3+** signals,
+**medium** needs 2, otherwise **low**. Both detectors' point contributions are the
+controlled bonuses in category F above — never the bulk of a score.
+
+**Niche-aware evaluation.** Niche-specific expectations (quote / appointment / emergency
+/ financing / project-proof) are centralized per **service family** in
+`NICHE_EXPECTATIONS`. A weakness is only scored when it's relevant to that family — e.g.
+"no online scheduling" counts for appointment-based niches (health & aesthetics,
+automotive, professional services) but not for a plumber, and "no financing" counts for
+high-ticket home services but not a law office. **Manual single audits carry no niche**,
+so they fall back to `DEFAULT_EXPECTATIONS` (general **quote** expectation only) — a
+business is never over-penalized for a feature that isn't standard for it.
+
+**Confidence & limitations — honest by design.** Evidence confidence reflects **evidence
+completeness, not purchase likelihood**: 3+ pages fetched → high, 2 → medium, 1 → low,
+blocked → unknown. **A blocked or unreachable site is `Unable to Evaluate` — it is
+explicitly NOT treated as low opportunity** (score is `null`, never 0). Every result
+carries `auditLimitations`, including the standing caveat that **visual mobile
+responsiveness was not browser-rendered** and so can't be fully verified.
+
+**Transparency.** Each breakdown item records `factorId`, `category`, `label`,
+`scoreImpact`, `evidence`, `confidence`, `sourcePage`, and `ruleId`. The UI shows the
+score, tier, primary reason, biggest booking weakness, LinkNow/template/confidence
+chips, and an expandable **"Why this opportunity score?"** list; an **Audit limitations**
+disclosure explains anything that couldn't be evaluated.
+
+**Integration & persistence.** The opportunity result is computed for single, bulk,
+discovery-seeded, and manual audits. It is attached to audit results and saved leads
+**without changing the Discovery Qualification Score or any prior 13B/15A metadata**.
+Saved leads gain the opportunity fields via safe defaults (`withOpportunityDefaults`),
+and older saved leads are migrated lazily — existing audit/discovery data is never
+overwritten with empty values.
+
+**Reminder:** the Website Opportunity Score and the Discovery Qualification Score are
+**kept separate on purpose.** **Next:** Milestone 15B2 — combined Client Opportunity
+Score and outreach openers.
+
 ## Local setup
 
 ```bash

@@ -3,6 +3,7 @@ import { generateAuditNotes } from '../utils/generateAuditNotes.js'
 import { calculateLeadScore } from '../utils/calculateLeadScore.js'
 import { safeFetch } from '../utils/safeFetch.js'
 import { SsrfError } from '../utils/ssrfGuard.js'
+import { extractAuditEvidence } from '../utils/extractAuditEvidence.js'
 
 const FETCH_TIMEOUT_MS = 10_000
 const USER_AGENT = 'Mozilla/5.0 (compatible; AuvricScout/1.0; +https://auvric.com)'
@@ -24,6 +25,8 @@ function accessErrorResult(url, errorMessage = null) {
     leadScore,
     leadPriority,
     scoreBreakdown,
+    // Compact evidence marking the audit as unevaluable (blocked / failed).
+    evidence: extractAuditEvidence([], { requestedUrl: url, finalUrl: url, blocked: true, errorMessage }),
   }
 }
 
@@ -71,13 +74,17 @@ export async function auditWebsite(url) {
     return accessErrorResult(url, msg)
   }
 
-  const { emails, pagesChecked } = await crawlContactPages(finalUrl, html)
+  const { emails, pagesChecked, pages } = await crawlContactPages(finalUrl, html)
   const auditNotes = generateAuditNotes(html)
   const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({
     emails,
     auditNotes,
     accessError: false,
   })
+
+  // Extract compact website-opportunity evidence, then let the page HTML be
+  // garbage-collected — raw HTML is never returned or persisted.
+  const evidence = extractAuditEvidence(pages, { requestedUrl: url, finalUrl })
 
   return {
     normalizedUrl: finalUrl,
@@ -90,5 +97,6 @@ export async function auditWebsite(url) {
     leadScore,
     leadPriority,
     scoreBreakdown,
+    evidence,
   }
 }

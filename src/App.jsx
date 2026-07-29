@@ -9,6 +9,7 @@ import BulkAuditScreen from './components/BulkAuditScreen'
 import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
+import { computeWebsiteOpportunity } from './utils/websiteOpportunity'
 import { getBestEmail } from './utils/bestEmail'
 import { isFollowUpDue } from './utils/followUp'
 import {
@@ -52,7 +53,9 @@ export default function App() {
     setIsLoading(true)
     try {
       const data = await runAudit(fields)
-      setAuditResult(data)
+      // Deterministic website-opportunity analysis (no niche for a single audit).
+      const opportunity = computeWebsiteOpportunity(data.evidence, { serviceFamily: null })
+      setAuditResult({ ...data, opportunity })
       if (!data.accessError) {
         const n = incrementLeadsGenerated()
         setLeadsGenerated(n)
@@ -78,6 +81,7 @@ export default function App() {
       leadScore: auditResult.leadScore ?? null,
       leadPriority: auditResult.leadPriority ?? null,
       scoreBreakdown: auditResult.scoreBreakdown ?? [],
+      opportunity: auditResult.opportunity ?? null,
     })
     setLeads(updated)
   }
@@ -202,6 +206,7 @@ export default function App() {
           isGeneratingOutreach={isGeneratingOutreach}
           outreachDraft={outreachDraft}
           outreachError={outreachError}
+          opportunity={auditResult?.opportunity}
         />
       </main>
     </div>

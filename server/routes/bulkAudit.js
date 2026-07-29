@@ -53,6 +53,7 @@ router.post('/', async (req, res) => {
       leadScore: 0,
       leadPriority: 'Low',
       scoreBreakdown: [],
+      evidence: null,
     }
   })
 

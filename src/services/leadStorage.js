@@ -1,7 +1,20 @@
 import { getBestEmail } from '../utils/bestEmail.js'
+import { DEFAULT_OPPORTUNITY } from '../config/websiteOpportunity.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
+
+// Returns the full website-opportunity field set, filling any missing field with
+// its safe default. Used for saving (from an opportunity result) and for lazy
+// migration of older leads (which lack these fields entirely).
+function withOpportunityDefaults(obj) {
+  const out = {}
+  const src = obj ?? {}
+  for (const key of Object.keys(DEFAULT_OPPORTUNITY)) {
+    out[key] = src[key] ?? DEFAULT_OPPORTUNITY[key]
+  }
+  return out
+}
 
 // Strips trailing slash for stable URL comparison across storage and results.
 // Both https://example.com and https://example.com/ normalize to the same key.
@@ -80,6 +93,8 @@ function migrateLead(lead) {
     chainRiskLevel: lead.chainRiskLevel ?? 'unknown',
     chainRiskReasons: lead.chainRiskReasons ?? [],
     chainRiskConfidence: lead.chainRiskConfidence ?? 'unknown',
+    // Website Opportunity metadata (Milestone 15B1) — safe defaults for legacy leads.
+    ...withOpportunityDefaults(lead),
   }
 }
 
@@ -107,6 +122,7 @@ export function saveLead({
   leadScore,
   leadPriority,
   scoreBreakdown,
+  opportunity,
 }) {
   const emails = emailsFound ?? []
   const lead = {
@@ -129,6 +145,8 @@ export function saveLead({
     leadScore: leadScore ?? null,
     leadPriority: leadPriority ?? null,
     scoreBreakdown: scoreBreakdown ?? [],
+    // Website Opportunity metadata (Milestone 15B1)
+    ...withOpportunityDefaults(opportunity),
   }
   const leads = [lead, ...getLeads()]
   setLeads(leads)
@@ -255,6 +273,8 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       chainRiskLevel: meta?.chainRiskLevel ?? 'unknown',
       chainRiskReasons: Array.isArray(meta?.chainRiskReasons) ? meta.chainRiskReasons : [],
       chainRiskConfidence: meta?.chainRiskConfidence ?? 'unknown',
+      // Website Opportunity metadata (from the audited result, not discovery)
+      ...withOpportunityDefaults(result.opportunity),
     })
     savedCount++
   }

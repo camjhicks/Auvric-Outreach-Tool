@@ -1,4 +1,5 @@
 import OutreachDraft from './OutreachDraft'
+import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import styles from './ResultsArea.module.css'
 
 export default function ResultsArea({
@@ -10,6 +11,7 @@ export default function ResultsArea({
   isGeneratingOutreach,
   outreachDraft,
   outreachError,
+  opportunity,
 }) {
   if (isLoading) {
     return (
@@ -51,6 +53,15 @@ export default function ResultsArea({
           <>
             <hr className={styles.divider} />
             <ScoreSection score={leadScore} priority={leadPriority} breakdown={scoreBreakdown} />
+          </>
+        )}
+
+        {opportunity && (
+          <>
+            <hr className={styles.divider} />
+            <div className={styles.opportunityWrap}>
+              <WebsiteOpportunitySection opportunity={opportunity} />
+            </div>
           </>
         )}
 

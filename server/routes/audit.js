@@ -27,6 +27,7 @@ router.post('/', async (req, res) => {
     leadScore: result.leadScore,
     leadPriority: result.leadPriority,
     scoreBreakdown: result.scoreBreakdown,
+    evidence: result.evidence,
   })
 })
 

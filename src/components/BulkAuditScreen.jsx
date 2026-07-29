@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
 import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
+import { computeWebsiteOpportunity } from '../utils/websiteOpportunity'
 import { downloadBulkAuditCSV } from '../utils/exportBulkAuditCsv'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
@@ -69,6 +70,17 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
     return m
   }, [discoveryBusinesses])
 
+  // Attach a deterministic Website Opportunity result to each audit result,
+  // niche-aware via the matching discovery record's service family.
+  const enrichedResults = useMemo(() => {
+    if (!results) return null
+    return results.map(r => {
+      const meta = discoveryByUrl.get(normalizeLeadUrl(r.requestedUrl ?? r.normalizedUrl))
+      const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: meta?.serviceFamily ?? null })
+      return { ...r, opportunity }
+    })
+  }, [results, discoveryByUrl])
+
   async function handleStart() {
     if (valid.length === 0 || isLoading) return
     setApiError(null)
@@ -98,18 +110,18 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
   }
 
   function handleExport() {
-    if (!results || results.length === 0) return
+    if (!enrichedResults || enrichedResults.length === 0) return
     setExportError(null)
     try {
-      downloadBulkAuditCSV(results, savedUrls)
+      downloadBulkAuditCSV(enrichedResults, savedUrls)
     } catch {
       setExportError('Unable to export these results right now.')
     }
   }
 
   function handleSaveSelected() {
-    if (selected.size === 0 || !results) return
-    const selectedResults = results.filter(r => selected.has(normalizeLeadUrl(r.normalizedUrl)))
+    if (selected.size === 0 || !enrichedResults) return
+    const selectedResults = enrichedResults.filter(r => selected.has(normalizeLeadUrl(r.normalizedUrl)))
     const { savedCount, skippedCount, leads: updatedLeads } = saveBulkLeads(selectedResults, discoveryByUrl)
     onLeadsChange(updatedLeads)
     setSelected(new Set())
@@ -217,12 +229,13 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
             )}
           </div>
           <div className={styles.resultsGrid}>
-            {results.map(result => {
+            {enrichedResults.map(result => {
               const normUrl = normalizeLeadUrl(result.normalizedUrl)
               return (
                 <BulkResultCard
                   key={result.normalizedUrl}
                   result={result}
+                  opportunity={result.opportunity}
                   selected={selected.has(normUrl)}
                   saved={savedUrls.has(normUrl)}
                   onSelectionChange={handleToggle}
