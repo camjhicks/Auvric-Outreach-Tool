@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { discoverLeads } from '../services/leadDiscoveryApi'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
+import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config/niches'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
 import styles from './LeadDiscoveryScreen.module.css'
 
@@ -9,9 +10,13 @@ const LIMIT_OPTIONS = [10, 20, 40, 60]
 const DEFAULT_LIMIT = 20
 // Bulk Audit accepts at most 20 URLs per batch; keep selection within that cap.
 const MAX_SELECTION = 20
+const ENABLED_NICHES = getEnabledNiches()
 
 export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
-  const [industry, setIndustry] = useState('')
+  // Default UX: no niche pre-selected (neutral — Scout is niche-agnostic, not
+  // HVAC-first). The user must pick a niche or enter a custom search.
+  const [nicheId, setNicheId] = useState('')
+  const [customPhrase, setCustomPhrase] = useState('')
   const [location, setLocation] = useState('')
   const [limit, setLimit] = useState(DEFAULT_LIMIT)
 
@@ -20,12 +25,18 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   const [result, setResult] = useState(null) // { query, businesses, totalFound }
   const [selected, setSelected] = useState(new Set()) // providerIds
 
+  const nicheSearch = useMemo(
+    () => resolveNicheSearch(nicheId, customPhrase),
+    [nicheId, customPhrase]
+  )
+
   // Enrich each business with a normalized website + eligibility flag.
   const businesses = useMemo(() => {
     if (!result) return []
     return result.businesses.map(b => {
       const normalizedUrl = normalizeWebsiteUrl(b.websiteUrl)
-      return { ...b, normalizedUrl, eligible: normalizedUrl != null }
+      const hasWebsite = normalizedUrl != null
+      return { ...b, normalizedUrl, hasWebsite, eligible: hasWebsite }
     })
   }, [result])
 
@@ -53,8 +64,12 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   async function handleSearch(e) {
     e?.preventDefault()
     if (isLoading) return
-    if (!industry.trim() || !location.trim()) {
-      setError('Please enter both an industry and a location.')
+    if (!nicheSearch) {
+      setError('Please choose a niche or enter a custom search.')
+      return
+    }
+    if (!location.trim()) {
+      setError('Please enter a location.')
       return
     }
     // Clear prior selections/results/messages as the new request begins.
@@ -63,12 +78,15 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     setSelected(new Set())
     setIsLoading(true)
     try {
+      // Send the configured (or custom) Google Places search phrase as the query.
       const data = await discoverLeads({
-        industry: industry.trim(),
+        industry: nicheSearch.searchPhrase,
         location: location.trim(),
         limit,
       })
-      setResult(data)
+      // Retain the niche context of THIS search alongside the results, so the
+      // niche used is stable even if the selector changes afterward.
+      setResult({ ...data, niche: nicheSearch })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -116,7 +134,7 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     for (const b of businesses) {
       if (!selected.has(b.providerId) || !b.normalizedUrl) continue
       if (seen.has(b.normalizedUrl)) continue
-      const discovery = toDiscoveryBusiness(b)
+      const discovery = toDiscoveryBusiness(b, result?.niche)
       if (!discovery) continue
       seen.add(b.normalizedUrl)
       out.push(discovery)
@@ -139,16 +157,18 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
       <form className={styles.form} onSubmit={handleSearch}>
         <div className={styles.fieldRow}>
           <label className={styles.field}>
-            <span className={styles.fieldLabel}>Industry</span>
-            <input
-              className={styles.input}
-              type="text"
-              value={industry}
-              onChange={e => setIndustry(e.target.value)}
-              placeholder="HVAC companies"
-              maxLength={120}
-              autoComplete="off"
-            />
+            <span className={styles.fieldLabel}>Niche</span>
+            <select
+              className={styles.select}
+              value={nicheId}
+              onChange={e => setNicheId(e.target.value)}
+            >
+              <option value="" disabled>Select a niche…</option>
+              {ENABLED_NICHES.map(n => (
+                <option key={n.id} value={n.id}>{n.label}</option>
+              ))}
+              <option value={CUSTOM_NICHE_ID}>Custom search…</option>
+            </select>
           </label>
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Location</span>
@@ -164,6 +184,21 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
           </label>
         </div>
 
+        {nicheId === CUSTOM_NICHE_ID && (
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Custom search phrase</span>
+            <input
+              className={styles.input}
+              type="text"
+              value={customPhrase}
+              onChange={e => setCustomPhrase(e.target.value)}
+              placeholder="e.g. solar panel installers"
+              maxLength={120}
+              autoComplete="off"
+            />
+          </label>
+        )}
+
         <div className={styles.controlsRow}>
           <label className={styles.limitField}>
             <span className={styles.fieldLabel}>Number of businesses</span>
@@ -175,7 +210,11 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
               {LIMIT_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
           </label>
-          <button className={styles.searchBtn} type="submit" disabled={isLoading}>
+          <button
+            className={styles.searchBtn}
+            type="submit"
+            disabled={isLoading || !nicheSearch || !location.trim()}
+          >
             {isLoading ? 'Finding businesses…' : 'Find Leads'}
           </button>
         </div>
@@ -196,6 +235,9 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
             <span className={styles.resultsCount}>
               {result.totalFound} business{result.totalFound !== 1 ? 'es' : ''} found
             </span>
+            {result.niche?.selectedNicheLabel && (
+              <span className={styles.nicheBadge}>{result.niche.selectedNicheLabel}</span>
+            )}
             <span className={styles.resultsQuery}>
               {result.query.industry} in {result.query.location}
             </span>

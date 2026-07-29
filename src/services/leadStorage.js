@@ -60,6 +60,14 @@ function migrateLead(lead) {
     primaryType: lead.primaryType ?? null,
     businessStatus: lead.businessStatus ?? null,
     discoverySource: lead.discoverySource ?? null,
+    // Niche metadata (Milestone 15A1). Null/false for older or manual leads;
+    // hasWebsite is derived from the saved website when not explicitly set.
+    selectedNicheId: lead.selectedNicheId ?? null,
+    selectedNicheLabel: lead.selectedNicheLabel ?? null,
+    selectedNicheSearchPhrase: lead.selectedNicheSearchPhrase ?? null,
+    serviceFamily: lead.serviceFamily ?? null,
+    highTicketWeight: lead.highTicketWeight ?? null,
+    hasWebsite: lead.hasWebsite ?? Boolean(lead.websiteUrl),
   }
 }
 
@@ -216,6 +224,13 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       primaryType: meta?.primaryType ?? null,
       businessStatus: meta?.businessStatus ?? null,
       discoverySource: meta?.discoverySource ?? null,
+      // Niche metadata (Milestone 15A1)
+      selectedNicheId: meta?.selectedNicheId ?? null,
+      selectedNicheLabel: meta?.selectedNicheLabel ?? null,
+      selectedNicheSearchPhrase: meta?.selectedNicheSearchPhrase ?? null,
+      serviceFamily: meta?.serviceFamily ?? null,
+      highTicketWeight: typeof meta?.highTicketWeight === 'number' ? meta.highTicketWeight : null,
+      hasWebsite: meta ? (meta.hasWebsite ?? true) : Boolean(result.normalizedUrl),
     })
     savedCount++
   }

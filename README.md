@@ -1,11 +1,69 @@
 # Auvric Scout
 
-AI-powered outreach assistant for local service businesses: discover leads, audit
-websites, score prospects, generate outreach drafts, and manage a lightweight CRM.
+Auvric Digital's **universal lead-discovery engine** for local service businesses:
+discover leads across many niches, audit their websites, score prospects, generate
+outreach drafts, and manage a lightweight CRM.
 
 > **Persistence note:** all saved data (leads, audits, outreach drafts, discovery
 > metadata) lives in your **browser's localStorage** — see
 > [Data & persistence](#data--persistence) before relying on it.
+
+## Lead Discovery — universal niches
+
+Lead Discovery is **niche-agnostic**. You pick a niche (or enter a custom search),
+a location, and a result limit; Scout runs a Google Places Text Search and returns
+real local businesses to review and send into Bulk Audit.
+
+**Niche configuration architecture.** All niches live in one module —
+`src/config/niches.js` — the single source of truth. Discovery reads from it; no
+component hardcodes niche labels, phrases, or weights. Each niche has:
+
+| Field | Meaning |
+|---|---|
+| `id` | stable internal id (e.g. `roofing`) |
+| `label` | user-facing name (e.g. "Roofing") |
+| `searchPhrase` | Google Places query text (e.g. "roofing companies") |
+| `serviceFamily` | one of `home_services`, `property_services`, `automotive`, `health_aesthetics`, `professional_services` |
+| `highTicketWeight` | relative deal value: `1` (low), `2` (medium), `3` (high) — carried for a future scoring milestone |
+| `enabled` | whether it shows in the selector |
+
+**Currently supported niches (23):** HVAC, Roofing, Plumbing, Electrical, Foundation
+repair, Concrete, Garage door companies, Kitchen & bath remodeling, Epoxy flooring,
+Pool builders, Landscaping, Tree services, Pest control, Fence companies, Pressure
+washing, Junk removal, Commercial cleaning, Auto body shops, Window tinting, Mobile
+detailing, Med spas, Cosmetic dentistry, Personal injury law firms.
+
+**Default niche (UX decision):** *no niche is preselected.* The selector opens on a
+disabled "Select a niche…" placeholder and "Find Leads" stays disabled until you
+choose a niche (or custom) and enter a location. This keeps Scout neutral — HVAC is
+supported but is **not** the default or primary niche.
+
+**Add a new niche:** append one row to the `NICHES` array in `src/config/niches.js`
+with the fields above. No changes to components or the request flow are needed.
+
+**Configured vs custom search:** a configured niche uses its fixed `searchPhrase`;
+a **custom** search lets you type any phrase (e.g. "solar panel installers"). Custom
+searches carry `selectedNicheId: "custom"` with `serviceFamily`/`highTicketWeight`
+set to `null`.
+
+**Normalized discovery fields (Milestone 15A1 additions).** Discovered businesses —
+and leads saved from discovery — carry these approved fields (only these; never the
+raw Google response): `businessName`, `websiteUrl`, `phone`, `address`, `rating`,
+`reviewCount`, `googlePlaceId`, `primaryType`, `businessStatus`, `discoverySource`,
+`selectedNicheId`, `selectedNicheLabel`, `selectedNicheSearchPhrase`, `serviceFamily`,
+`highTicketWeight`, `hasWebsite`. Missing values default to `null` (or `false` for
+`hasWebsite`); older saved leads migrate safely at read time.
+
+**Current limitations (deliberately deferred):**
+- No qualification/opportunity scoring engine yet.
+- No chain detection yet.
+- No no-website call-list workflow yet (businesses without a website are shown but
+  cannot be sent to Bulk Audit).
+- No owner-name, years-in-business, local-ownership, Google Ads, or hiring signals —
+  Scout never invents these.
+
+**Next planned milestones:** 15A2 Qualification Engine · 15A3 Discovery UI & Ranking
+Upgrade · 15B Website Opportunity Intelligence · 15C No-Website Call List.
 
 ## Local setup
 

@@ -91,6 +91,7 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
 
         {hasDiscovery && (
           <Section title="Business Details">
+            {lead.selectedNicheLabel && <InfoRow label="Niche">{lead.selectedNicheLabel}</InfoRow>}
             {lead.phone && <InfoRow label="Phone">{lead.phone}</InfoRow>}
             {lead.address && <InfoRow label="Address">{lead.address}</InfoRow>}
             {lead.primaryType && <InfoRow label="Type">{lead.primaryType}</InfoRow>}

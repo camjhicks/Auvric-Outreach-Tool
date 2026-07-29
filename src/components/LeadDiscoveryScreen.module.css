@@ -183,6 +183,17 @@
   color: var(--color-text);
 }
 
+.nicheBadge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  white-space: nowrap;
+}
+
 .resultsQuery {
   font-size: 0.85rem;
   color: var(--color-muted);
