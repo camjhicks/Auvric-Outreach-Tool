@@ -106,6 +106,37 @@
   color: #4a4f66;
 }
 
+.input[aria-invalid='true'] {
+  border-color: #f87171;
+}
+
+.fieldHint {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+
+.criteria {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+
+.criteriaLabel {
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.criteriaOpen {
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.criteriaList {
+  color: var(--color-text);
+}
+
 .controlsRow {
   display: flex;
   align-items: flex-end;

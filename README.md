@@ -151,32 +151,93 @@ Lead Discovery has a collapsible **Filters & sort** panel (progressive disclosur
 mobile-friendly) driven by pure utilities in `src/utils/discoveryFilters.js` — no
 filter/sort logic lives in cards, and the qualified result objects are never mutated.
 
+### "Untouched means Any" — flexible search defaults (Milestone 15A4)
+
+Every optional criterion is **permissive until you intentionally narrow it.** If you
+leave a search or filter field untouched, Scout treats it as **"Any"/"All"** rather than
+requiring input or silently applying a restrictive threshold.
+
+- **Only two inputs are required** to run a discovery search: the **niche / search
+  phrase** and the **location**. Everything else is optional.
+- Nothing is silently narrowed — Scout never applies a hidden minimum review count or
+  rating, and never hides Low-Priority, Review-Manually, disqualified, high-chain, or
+  no-website leads unless you ask.
+- The one non-negotiable exclusion is **permanently closed** businesses: they are not
+  actionable and are **always hidden** (not a toggle). **Temporarily closed** businesses
+  stay **visible and clearly flagged** unless you explicitly exclude them.
+
+**Default criteria** (what a fresh search / **Reset filters** restores):
+
+| Criterion | Default |
+| --- | --- |
+| Review count | **Any** |
+| Rating | **Any** |
+| Website status | **All businesses** |
+| Phone | **Any phone status** |
+| Qualification tier | **All tiers** |
+| Chain risk | **Include all** (medium always retained) |
+| Business status | **Exclude permanently closed only** (temporarily closed stays, flagged) |
+| Sort | Qualification score, highest first |
+
+**Reset filters** restores exactly these permissive defaults and **does not** clear the
+niche, location, or the current results.
+
+**Partial specification.** Change only the one or two fields you care about — every other
+criterion stays unrestricted. Examples:
+
+- Roofing · Miami · **25–500 reviews** (everything else Any)
+- Plumbing · Orlando · **No website only**
+- Med spas · Fort Lauderdale · **4.5+ rating**
+- Custom niche · Broward County · **Phone required**
+
+Focused tests assert that an active criterion never accidentally activates another
+(e.g. setting a review filter leaves unknown-rating and high-chain records untouched).
+
 **Filters:**
-- **Review count** — Any · 10+ · 25+ · 25–500 (ideal, matches the configured review
-  band) · 100+ · Custom min/max.
-- **Minimum rating** — Any · 3.5+ · 4.0+ · 4.5+ · Custom.
-- **Website** — All · Has website · No website (no-website records stay visible but
-  remain unselectable for Bulk Audit).
+- **Review count** — Any · 10+ · 25–500 (ideal, matches the configured review band) ·
+  25+ · 100+ · Custom range.
+- **Minimum rating** — Any · 3.5+ · 4.0+ · 4.5+ · Custom minimum.
+- **Website** — All businesses · Has website · No website (no-website records stay visible
+  but remain unselectable for Bulk Audit; picking **No website** never requires a rating,
+  review, or qualification input).
+- **Phone** — Any phone status · Phone required · No phone listed. Uses normalized phone
+  data (a number counts only when it carries ≥10 digits); a missing phone stays
+  unknown/absent and is never fabricated. Phone filtering composes with every website
+  option. A phone-required business with no website stays visible but remains
+  audit-ineligible (it has no site to audit).
 - **Qualification tier** — All · Priority only · Qualified & above · Review Manually &
   above · Exclude Low Priority · Exclude Disqualified (uses the centralized tier rules).
 - **Exclude likely chains** — hides `high` chain risk; **medium risk is retained** for
-  manual review (never labeled "locally owned").
-- **Exclude closed businesses** — hides permanently *and* temporarily closed from the
-  visible list; they remain in the underlying result set and the breakdown counts.
+  manual review (never labeled "locally owned"). Disqualified and chain-risk records stay
+  clearly labeled even when visible.
+- **Exclude temporarily closed too** — off by default. Permanently closed businesses are
+  always hidden regardless; this option additionally hides temporarily closed ones.
+
+**Location** is a single required field that accepts natural entries — city + state,
+county + state, a metro/regional phrase, or a ZIP code (e.g. "Orlando, FL",
+"Broward County, FL", "South Florida", "33301"). There are **no** separate required
+city/state/county/ZIP fields. (Radius and multi-city batch searching are not in scope —
+see deferred features below.)
+
+**Result limit** — 10 · 20 · 50 · Custom. A custom value must be a whole number from
+**1 to 60** (the Google Text Search hard cap); out-of-range or non-numeric values are
+clearly rejected both in the UI and server-side, so there is never an uncontrolled
+result fan-out.
+
+**Active-criteria summary** — a concise line above the panel shows only the criteria that
+are actively narrowing the search (e.g. *"25–500 reviews · 4.5+ rating · Has website"*).
+When nothing is narrowing, it states the search is **broadly unrestricted** rather than
+listing every "Any" field.
 
 **Unknown-value behavior (documented):** under an **active** review-count or rating
 filter, records with **unknown** review count / rating are **excluded** (we can't
 verify they meet the minimum). Under "Any", they're included. Missing values are never
 treated as zero.
 
-**Chosen defaults** (outreach-focused, but deliberately not over-hiding):
-Review 10+ · Rating 4.0+ · Website All · **Qualification: Exclude Disqualified** ·
-Exclude likely chains ✓ · Exclude closed ✓ · Sort: qualification score high→low.
-Reasoning: 10+/4.0+ favor real demand and reputation; **"Exclude Disqualified" was
-chosen over the stricter "Qualified & above"** so Review-Manually and Low-Priority
-prospects (including many no-website / unknown-status leads) are **not** hidden by
-default — sorting surfaces the strongest first, and **Reset filters** restores these
-defaults without touching the niche, location, or search results.
+> **History:** earlier milestones shipped stricter outreach-focused defaults (Review 10+ ·
+> Rating 4.0+ · Exclude Disqualified · Exclude chains/closed). Milestone 15A4 replaced them
+> with the permissive model above — untouched fields never narrow the search, and ranking
+> (not hiding) surfaces the strongest prospects first.
 
 **Sorting modes:** qualification score (↑/↓), review count (↑/↓), rating (↑/↓), name
 (A–Z / Z–A). Default is score descending. Missing numeric values always sort **last**.
@@ -192,7 +253,7 @@ eligible records (up to the 20-URL cap).
 **Result summary** (above the list): shows *X of Y results · N with websites · M
 without · S selected*, with an expandable breakdown (total returned by Google, valid
 after dedupe, and per-category exclusions: closed, chains, tier, review, rating,
-website, duplicate/invalid).
+website, phone, duplicate/invalid).
 
 **Result cards:** tier badge + numeric score, primary reason, then secondary chips
 (review band · chain risk · website status). A collapsible **"Why this score?"** shows
@@ -204,6 +265,16 @@ website is weak before an audit.
 touch targets are ≥40px, and score details stay collapsed by default so cards don't
 grow tall. **Filter/sort state is component-local** (simplest reliable choice for a
 single-user MVP; not persisted, and kept fully separate from saved-lead localStorage).
+
+**Current exclusions:** only **permanently closed** businesses are always removed;
+everything else is shown (and clearly labeled) unless you filter it out.
+
+**Deferred (intentionally not in this milestone):**
+- **Radius searching** around a point.
+- **Multi-city / batch** searches in one run.
+- **Exact review recency** (how recently reviews were left).
+- **Owner / ownership research.**
+- **Advertising and hiring signals** (e.g. running ads, actively hiring).
 
 **Reminder:** qualification scoring is **discovery-level only** — it does not evaluate
 website quality (that begins after an audit). **Next:** 15B Website Opportunity

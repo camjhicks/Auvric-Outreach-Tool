@@ -115,6 +115,13 @@
   height: 18px;
 }
 
+.note {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-muted);
+  margin: 0.25rem 0 0.5rem;
+}
+
 .reset {
   align-self: flex-start;
   background: none;

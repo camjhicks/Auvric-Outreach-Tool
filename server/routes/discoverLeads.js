@@ -3,7 +3,11 @@ import { searchBusinesses, LeadDiscoveryError } from '../services/leadDiscovery/
 
 const router = Router()
 
-const ALLOWED_LIMITS = [10, 20, 40, 60]
+// Result limit: any integer from 1 to MAX_LIMIT is accepted (this backs the
+// 10/20/50 presets plus a validated custom value). The provider still hard-caps
+// pagination at MAX_LIMIT, so this can never trigger an unbounded fan-out.
+const MIN_LIMIT = 1
+const MAX_LIMIT = 60
 const DEFAULT_LIMIT = 20
 const MAX_FIELD_LENGTH = 120
 
@@ -28,12 +32,12 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Industry and location must be shorter.' })
   }
 
-  // Limit: default when omitted/null, otherwise must be one of the allowed values.
+  // Limit: default when omitted/null, otherwise must be an integer in [1, MAX_LIMIT].
   let limit = DEFAULT_LIMIT
   if (rawLimit !== undefined && rawLimit !== null) {
     const parsed = Number(rawLimit)
-    if (!ALLOWED_LIMITS.includes(parsed)) {
-      return res.status(400).json({ error: 'Number of businesses must be 10, 20, 40, or 60.' })
+    if (!Number.isInteger(parsed) || parsed < MIN_LIMIT || parsed > MAX_LIMIT) {
+      return res.status(400).json({ error: `Number of businesses must be a whole number between ${MIN_LIMIT} and ${MAX_LIMIT}.` })
     }
     limit = parsed
   }

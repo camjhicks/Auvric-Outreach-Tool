@@ -8,17 +8,24 @@ const TIER_RANK = Object.freeze({
   Priority: 4, Qualified: 3, 'Review Manually': 2, 'Low Priority': 1, Disqualified: 0,
 })
 
-// Outreach-focused defaults. See README for the reasoning behind these choices.
+// PERMISSIVE defaults (Milestone 15A4): every optional criterion starts at
+// "Any"/"All". An untouched field never narrows the search — only the niche/search
+// phrase and location are required to run discovery. See README for the full rule.
+//
+// The one non-negotiable exclusion is permanently-closed businesses: they are not
+// actionable and are ALWAYS hidden (not a user toggle). Temporarily-closed
+// businesses stay visible and clearly flagged unless the user opts to hide them.
 export const DEFAULT_FILTERS = Object.freeze({
-  reviewPreset: '10plus',    // Any | 10plus | ideal | 25plus | 100plus | custom
+  reviewPreset: 'any',       // any | 10plus | ideal | 25plus | 100plus | custom
   reviewMin: null,
   reviewMax: null,
-  ratingPreset: '4.0',       // any | 3.5 | 4.0 | 4.5 | custom
+  ratingPreset: 'any',       // any | 3.5 | 4.0 | 4.5 | custom
   ratingMin: null,
   websiteStatus: 'all',      // all | has | none
-  tierFilter: 'exclude_dq',  // all | priority | qualified_up | review_up | exclude_low | exclude_dq
-  excludeChains: true,       // exclude high chain risk (medium retained for manual review)
-  excludeClosed: true,       // exclude permanently + temporarily closed from the visible list
+  phoneStatus: 'any',        // any | has | none  (uses normalized phone data)
+  tierFilter: 'all',         // all | priority | qualified_up | review_up | exclude_low | exclude_dq
+  excludeChains: false,      // when true, hide high chain risk (medium always retained)
+  excludeTempClosed: false,  // permanently-closed is always hidden; this also hides temporarily-closed
   sort: 'score_desc',
 })
 
@@ -30,6 +37,17 @@ const getReviews = b => (typeof b?.reviewCount === 'number' && Number.isFinite(b
 const getRating = b => (typeof b?.rating === 'number' && Number.isFinite(b.rating) ? b.rating : null)
 const getName = b => String(b?.businessName ?? '').trim().toLowerCase()
 const getStatus = b => b?.businessStatus ?? null
+
+// Normalized phone presence. Missing/blank phone stays UNKNOWN/absent — never
+// fabricated. A phone counts as "present" only when it carries at least 10 digits
+// (a complete North-American number), so partial junk isn't treated as a real phone.
+function getPhoneDigits(b) {
+  const raw = b?.phoneNumber ?? b?.phone ?? null
+  if (typeof raw !== 'string') return null
+  const digits = raw.replace(/\D/g, '')
+  return digits.length >= 10 ? digits : null
+}
+export const hasPhone = b => getPhoneDigits(b) != null
 
 // A business is audit-eligible only if it has a usable website.
 export function isAuditEligible(b) {
@@ -80,6 +98,13 @@ function passWebsite(b, filters) {
   if (filters.websiteStatus === 'none') return !isAuditEligible(b)
   return true
 }
+// Phone availability. Independent of website status, so it composes with every
+// website option. 'has' requires a normalized phone; 'none' requires its absence.
+function passPhone(b, filters) {
+  if (filters.phoneStatus === 'has') return hasPhone(b)
+  if (filters.phoneStatus === 'none') return !hasPhone(b)
+  return true
+}
 function passTier(b, filters) {
   const tier = getTier(b)
   const rank = TIER_RANK[tier] ?? -1
@@ -95,10 +120,13 @@ function passTier(b, filters) {
 function passChain(b, filters) {
   return !filters.excludeChains || getChain(b) !== 'high'
 }
+// Permanently-closed businesses are ALWAYS hidden (not actionable). Temporarily-closed
+// businesses stay visible (and are flagged in the UI) unless the user opts to hide them.
 function passClosed(b, filters) {
-  if (!filters.excludeClosed) return true
   const s = getStatus(b)
-  return s !== 'CLOSED_PERMANENTLY' && s !== 'CLOSED_TEMPORARILY'
+  if (s === 'CLOSED_PERMANENTLY') return false
+  if (s === 'CLOSED_TEMPORARILY') return !filters.excludeTempClosed
+  return true
 }
 
 /**
@@ -108,12 +136,13 @@ function passClosed(b, filters) {
  */
 export function applyFilters(businesses, filters) {
   const list = Array.isArray(businesses) ? businesses : []
-  const counts = { review: 0, rating: 0, website: 0, tier: 0, chain: 0, closed: 0 }
+  const counts = { review: 0, rating: 0, website: 0, phone: 0, tier: 0, chain: 0, closed: 0 }
   const visible = list.filter(b => {
     let ok = true
     if (!passReview(b, filters)) { counts.review++; ok = false }
     if (!passRating(b, filters)) { counts.rating++; ok = false }
     if (!passWebsite(b, filters)) { counts.website++; ok = false }
+    if (!passPhone(b, filters)) { counts.phone++; ok = false }
     if (!passTier(b, filters)) { counts.tier++; ok = false }
     if (!passChain(b, filters)) { counts.chain++; ok = false }
     if (!passClosed(b, filters)) { counts.closed++; ok = false }
@@ -174,6 +203,53 @@ export function pruneSelection(selectedSet, visibleBusinesses) {
   const next = new Set()
   for (const id of selectedSet) if (eligibleIds.has(id)) next.add(id)
   return next
+}
+
+// ---- Active-criteria summary --------------------------------------------
+// Human-readable list of the criteria that are ACTIVELY narrowing the search.
+// Untouched ("Any"/"All") fields are omitted so the summary stays concise and
+// makes it obvious when a search is broadly unrestricted.
+function reviewSummaryLabel(filters) {
+  switch (filters.reviewPreset) {
+    case '10plus': return '10+ reviews'
+    case 'ideal': return '25–500 reviews'
+    case '25plus': return '25+ reviews'
+    case '100plus': return '100+ reviews'
+    case 'custom': {
+      const { min, max } = reviewRange(filters) ?? {}
+      if (min != null && max != null) return `${min}–${max} reviews`
+      if (min != null) return `${min}+ reviews`
+      if (max != null) return `up to ${max} reviews`
+      return null // custom with both bounds blank = unrestricted
+    }
+    default: return null
+  }
+}
+function ratingSummaryLabel(filters) {
+  const min = ratingMinOf(filters)
+  return min != null ? `${min}+ rating` : null
+}
+const TIER_SUMMARY_LABEL = {
+  priority: 'Priority only',
+  qualified_up: 'Qualified & above',
+  review_up: 'Review Manually & above',
+  exclude_low: 'Excluding Low Priority',
+  exclude_dq: 'Excluding Disqualified',
+}
+
+export function summarizeActiveCriteria(filters) {
+  const f = filters ?? DEFAULT_FILTERS
+  const parts = []
+  const review = reviewSummaryLabel(f); if (review) parts.push(review)
+  const rating = ratingSummaryLabel(f); if (rating) parts.push(rating)
+  if (f.websiteStatus === 'has') parts.push('Has website')
+  else if (f.websiteStatus === 'none') parts.push('No website')
+  if (f.phoneStatus === 'has') parts.push('Phone required')
+  else if (f.phoneStatus === 'none') parts.push('No phone listed')
+  if (f.tierFilter && f.tierFilter !== 'all' && TIER_SUMMARY_LABEL[f.tierFilter]) parts.push(TIER_SUMMARY_LABEL[f.tierFilter])
+  if (f.excludeChains) parts.push('Excluding likely chains')
+  if (f.excludeTempClosed) parts.push('Excluding temporarily closed')
+  return { parts, unrestricted: parts.length === 0 }
 }
 
 // ---- Summary counts ------------------------------------------------------

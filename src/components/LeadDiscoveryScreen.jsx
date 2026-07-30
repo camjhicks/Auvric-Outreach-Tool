@@ -6,17 +6,24 @@ import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config
 import { qualifyBusiness } from '../utils/qualification'
 import { dedupeAndValidate } from '../utils/discoveryDedup'
 import {
-  DEFAULT_FILTERS, applyFilters, sortBusinesses, pruneSelection, computeSummary, isAuditEligible,
+  DEFAULT_FILTERS, applyFilters, sortBusinesses, pruneSelection, computeSummary,
+  isAuditEligible, summarizeActiveCriteria,
 } from '../utils/discoveryFilters'
 import DiscoveryFilters from './DiscoveryFilters'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
 import styles from './LeadDiscoveryScreen.module.css'
 
-const LIMIT_OPTIONS = [10, 20, 40, 60]
+const LIMIT_PRESETS = [10, 20, 50]
 const DEFAULT_LIMIT = 20
+// Server-side hard cap on results (Google Text Search maxes out at 60). The custom
+// limit is validated against this so the UI can never request an unbounded fan-out.
+const MAX_LIMIT = 60
 // Bulk Audit accepts at most 20 URLs per batch; keep selection within that cap.
 const MAX_SELECTION = 20
 const ENABLED_NICHES = getEnabledNiches()
+
+// Filter keys that, when changed from their permissive default, count as "active".
+const ACTIVE_FILTER_KEYS = ['reviewPreset', 'ratingPreset', 'websiteStatus', 'phoneStatus', 'tierFilter', 'excludeChains', 'excludeTempClosed']
 
 export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   // Default UX: no niche pre-selected (neutral — Scout is niche-agnostic, not
@@ -24,7 +31,9 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   const [nicheId, setNicheId] = useState('')
   const [customPhrase, setCustomPhrase] = useState('')
   const [location, setLocation] = useState('')
-  const [limit, setLimit] = useState(DEFAULT_LIMIT)
+  // Limit control: a preset (10/20/50) or a validated custom value (1–MAX_LIMIT).
+  const [limitChoice, setLimitChoice] = useState(String(DEFAULT_LIMIT)) // '10' | '20' | '50' | 'custom'
+  const [customLimit, setCustomLimit] = useState('')
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -37,6 +46,17 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     () => resolveNicheSearch(nicheId, customPhrase),
     [nicheId, customPhrase]
   )
+
+  // Effective result limit + validation. A blank/out-of-range custom value is
+  // invalid (blocks the search) rather than silently clamped, so the user knows.
+  const customLimitNum = Number(customLimit)
+  const customLimitValid =
+    customLimit.trim() !== '' &&
+    Number.isInteger(customLimitNum) &&
+    customLimitNum >= 1 &&
+    customLimitNum <= MAX_LIMIT
+  const limitValid = limitChoice !== 'custom' || customLimitValid
+  const effectiveLimit = limitChoice === 'custom' ? customLimitNum : Number(limitChoice)
 
   // Enrich → validate/dedupe → qualify (unsorted, unfiltered). Pure; no mutation.
   const { validQualified, excludedInvalidDup } = useMemo(() => {
@@ -100,6 +120,10 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
       setError('Please enter a location.')
       return
     }
+    if (!limitValid) {
+      setError(`Enter a number of businesses between 1 and ${MAX_LIMIT}.`)
+      return
+    }
     // Clear prior selections/results/messages as the new request begins.
     setError(null)
     setResult(null)
@@ -110,7 +134,7 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
       const data = await discoverLeads({
         industry: nicheSearch.searchPhrase,
         location: location.trim(),
-        limit,
+        limit: effectiveLimit,
       })
       // Retain the niche context of THIS search alongside the results, so the
       // niche used is stable even if the selector changes afterward.
@@ -183,8 +207,8 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
     selectedCount: selected.size,
     filterCounts,
   })
-  const activeFilterCount = ['reviewPreset', 'ratingPreset', 'websiteStatus', 'tierFilter', 'excludeChains', 'excludeClosed']
-    .filter(k => filters[k] !== DEFAULT_FILTERS[k]).length
+  const activeFilterCount = ACTIVE_FILTER_KEYS.filter(k => filters[k] !== DEFAULT_FILTERS[k]).length
+  const criteria = summarizeActiveCriteria(filters)
 
   return (
     <div className={styles.screen}>
@@ -221,10 +245,13 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
               type="text"
               value={location}
               onChange={e => setLocation(e.target.value)}
-              placeholder="Orlando, Florida"
+              placeholder="City, county, metro, or ZIP"
               maxLength={120}
               autoComplete="off"
             />
+            <span className={styles.fieldHint}>
+              e.g. “Orlando, FL” · “Broward County, FL” · “South Florida” · “33301”
+            </span>
           </label>
         </div>
 
@@ -248,16 +275,33 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
             <span className={styles.fieldLabel}>Number of businesses</span>
             <select
               className={styles.select}
-              value={limit}
-              onChange={e => setLimit(Number(e.target.value))}
+              value={limitChoice}
+              onChange={e => setLimitChoice(e.target.value)}
             >
-              {LIMIT_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              {LIMIT_PRESETS.map(n => <option key={n} value={String(n)}>{n}</option>)}
+              <option value="custom">Custom…</option>
             </select>
           </label>
+          {limitChoice === 'custom' && (
+            <label className={styles.limitField}>
+              <span className={styles.fieldLabel}>Custom (1–{MAX_LIMIT})</span>
+              <input
+                className={styles.input}
+                type="number"
+                min="1"
+                max={MAX_LIMIT}
+                inputMode="numeric"
+                value={customLimit}
+                onChange={e => setCustomLimit(e.target.value)}
+                placeholder={`1–${MAX_LIMIT}`}
+                aria-invalid={!customLimitValid && customLimit.trim() !== ''}
+              />
+            </label>
+          )}
           <button
             className={styles.searchBtn}
             type="submit"
-            disabled={isLoading || !nicheSearch || !location.trim()}
+            disabled={isLoading || !nicheSearch || !location.trim() || !limitValid}
           >
             {isLoading ? 'Finding businesses…' : 'Find Leads'}
           </button>
@@ -316,9 +360,19 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
               <li>Hidden — review filter: {filterCounts.review}</li>
               <li>Hidden — rating filter: {filterCounts.rating}</li>
               <li>Hidden — website filter: {filterCounts.website}</li>
+              <li>Hidden — phone filter: {filterCounts.phone}</li>
               <li>Duplicate / invalid records removed: {summary.excludedInvalidDup}</li>
             </ul>
           </details>
+
+          <p className={styles.criteria}>
+            <span className={styles.criteriaLabel}>Active criteria:</span>{' '}
+            {criteria.unrestricted ? (
+              <span className={styles.criteriaOpen}>Broadly unrestricted — showing all matching businesses</span>
+            ) : (
+              <span className={styles.criteriaList}>{criteria.parts.join(' · ')}</span>
+            )}
+          </p>
 
           <DiscoveryFilters
             filters={filters}

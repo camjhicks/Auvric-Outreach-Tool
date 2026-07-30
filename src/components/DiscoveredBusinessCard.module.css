@@ -197,6 +197,11 @@
   flex: 1;
 }
 
+.statusClosed {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
 .link {
   color: var(--color-primary);
   text-decoration: none;

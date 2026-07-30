@@ -171,7 +171,9 @@ export default function DiscoveredBusinessCard({
         {statusLabel && (
           <div className={styles.row}>
             <span className={styles.label}>Status</span>
-            <span className={styles.value}>{statusLabel}</span>
+            <span className={`${styles.value} ${business.businessStatus === 'CLOSED_TEMPORARILY' || business.businessStatus === 'CLOSED_PERMANENTLY' ? styles.statusClosed : ''}`}>
+              {statusLabel}
+            </span>
           </div>
         )}
       </div>

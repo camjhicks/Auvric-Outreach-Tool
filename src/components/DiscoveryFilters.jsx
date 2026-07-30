@@ -4,8 +4,8 @@ import styles from './DiscoveryFilters.module.css'
 const REVIEW_OPTIONS = [
   ['any', 'Any review count'],
   ['10plus', '10+ reviews'],
+  ['ideal', '25–500 reviews'],
   ['25plus', '25+ reviews'],
-  ['ideal', '25–500 (ideal)'],
   ['100plus', '100+ reviews'],
   ['custom', 'Custom range'],
 ]
@@ -20,6 +20,11 @@ const WEBSITE_OPTIONS = [
   ['all', 'All businesses'],
   ['has', 'Has website'],
   ['none', 'No website'],
+]
+const PHONE_OPTIONS = [
+  ['any', 'Any phone status'],
+  ['has', 'Phone required'],
+  ['none', 'No phone listed'],
 ]
 const TIER_OPTIONS = [
   ['all', 'All tiers'],
@@ -122,6 +127,14 @@ export default function DiscoveryFilters({ filters, onChange, onReset, activeCou
             </label>
 
             <label className={styles.field}>
+              <span className={styles.label}>Phone</span>
+              <select className={styles.select} value={filters.phoneStatus}
+                onChange={e => set('phoneStatus', e.target.value)}>
+                {PHONE_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+
+            <label className={styles.field}>
               <span className={styles.label}>Qualification</span>
               <select className={styles.select} value={filters.tierFilter}
                 onChange={e => set('tierFilter', e.target.value)}>
@@ -137,11 +150,15 @@ export default function DiscoveryFilters({ filters, onChange, onReset, activeCou
               Exclude likely chains (high risk)
             </label>
             <label className={styles.checkLabel}>
-              <input type="checkbox" checked={filters.excludeClosed}
-                onChange={e => set('excludeClosed', e.target.checked)} />
-              Exclude closed businesses
+              <input type="checkbox" checked={filters.excludeTempClosed}
+                onChange={e => set('excludeTempClosed', e.target.checked)} />
+              Exclude temporarily closed too
             </label>
           </div>
+          <p className={styles.note}>
+            Permanently closed businesses are always hidden. Temporarily closed ones stay
+            visible and flagged unless you exclude them above.
+          </p>
 
           <button type="button" className={styles.reset} onClick={onReset}>Reset filters</button>
         </div>
