@@ -1,6 +1,7 @@
 import { getBestEmail } from '../utils/bestEmail.js'
 import { DEFAULT_OPPORTUNITY } from '../config/websiteOpportunity.js'
 import { DEFAULT_CLIENT_OPPORTUNITY } from '../config/clientOpportunity.js'
+import { DEFAULT_SALES_REASONING } from '../config/salesReasoning.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
@@ -25,6 +26,18 @@ function withClientOpportunityDefaults(obj) {
   const src = obj ?? {}
   for (const key of Object.keys(DEFAULT_CLIENT_OPPORTUNITY)) {
     out[key] = src[key] ?? DEFAULT_CLIENT_OPPORTUNITY[key]
+  }
+  return out
+}
+
+// Returns the full Sales Reasoning field set (Milestone 15B2B), filling any missing
+// field with its safe default — used when saving computed guidance and when lazily
+// migrating older leads that predate the sales-reasoning layer.
+function withSalesReasoningDefaults(obj) {
+  const out = {}
+  const src = obj ?? {}
+  for (const key of Object.keys(DEFAULT_SALES_REASONING)) {
+    out[key] = src[key] ?? DEFAULT_SALES_REASONING[key]
   }
   return out
 }
@@ -112,6 +125,9 @@ function migrateLead(lead) {
     // Legacy leads are NOT silently recomputed here; they keep null/unknown until a
     // fresh audit produces both component scores.
     ...withClientOpportunityDefaults(lead),
+    // Sales Reasoning metadata (Milestone 15B2B) — safe defaults; never invented for
+    // legacy leads that lack the required verified evidence.
+    ...withSalesReasoningDefaults(lead),
   }
 }
 
@@ -141,6 +157,7 @@ export function saveLead({
   scoreBreakdown,
   opportunity,
   clientOpportunity,
+  salesReasoning,
 }) {
   const emails = emailsFound ?? []
   const lead = {
@@ -167,6 +184,8 @@ export function saveLead({
     ...withOpportunityDefaults(opportunity),
     // Client Opportunity metadata (Milestone 15B2A)
     ...withClientOpportunityDefaults(clientOpportunity),
+    // Sales Reasoning metadata (Milestone 15B2B)
+    ...withSalesReasoningDefaults(salesReasoning),
   }
   const leads = [lead, ...getLeads()]
   setLeads(leads)
@@ -298,6 +317,9 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       // Client Opportunity metadata (Milestone 15B2A) — combined from the audited
       // result + discovery metadata by the caller; safe defaults otherwise.
       ...withClientOpportunityDefaults(result.clientOpportunity),
+      // Sales Reasoning metadata (Milestone 15B2B) — derived by the caller from the
+      // combined result; safe defaults otherwise.
+      ...withSalesReasoningDefaults(result.salesReasoning),
     })
     savedCount++
   }

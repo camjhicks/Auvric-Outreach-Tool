@@ -1,6 +1,7 @@
 import OutreachDraft from './OutreachDraft'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import ClientOpportunitySection from './ClientOpportunitySection'
+import SalesApproachSection from './SalesApproachSection'
 import styles from './ResultsArea.module.css'
 
 export default function ResultsArea({
@@ -14,6 +15,7 @@ export default function ResultsArea({
   outreachError,
   opportunity,
   clientOpportunity,
+  salesReasoning,
 }) {
   if (isLoading) {
     return (
@@ -63,6 +65,15 @@ export default function ResultsArea({
             <hr className={styles.divider} />
             <div className={styles.opportunityWrap}>
               <ClientOpportunitySection clientOpportunity={clientOpportunity} />
+            </div>
+          </>
+        )}
+
+        {salesReasoning && (
+          <>
+            <hr className={styles.divider} />
+            <div className={styles.opportunityWrap}>
+              <SalesApproachSection salesReasoning={salesReasoning} />
             </div>
           </>
         )}

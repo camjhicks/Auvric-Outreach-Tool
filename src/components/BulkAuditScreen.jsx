@@ -4,6 +4,7 @@ import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { computeWebsiteOpportunity } from '../utils/websiteOpportunity'
 import { computeClientOpportunity } from '../utils/clientOpportunity'
+import { computeSalesReasoning } from '../utils/salesReasoning'
 import { downloadBulkAuditCSV } from '../utils/exportBulkAuditCsv'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
@@ -81,14 +82,17 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
       const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: meta?.serviceFamily ?? null })
       // Flat input: discovery metadata (qualification + business fields) merged with
       // the website-opportunity result. Manual URLs (no meta) → website-only provisional.
-      const clientOpportunity = computeClientOpportunity({
+      const combinedInput = {
         ...(meta ?? {}),
         ...opportunity,
         businessName: (typeof r.businessName === 'string' && r.businessName.trim()) || meta?.businessName || null,
         hasWebsite: meta ? (meta.hasWebsite ?? true) : true,
         normalizedUrl: r.normalizedUrl,
-      })
-      return { ...r, opportunity, clientOpportunity }
+      }
+      const clientOpportunity = computeClientOpportunity(combinedInput)
+      // Deterministic sales reasoning from the combined evidence (no AI).
+      const salesReasoning = computeSalesReasoning({ ...combinedInput, ...clientOpportunity })
+      return { ...r, opportunity, clientOpportunity, salesReasoning }
     })
   }, [results, discoveryByUrl])
 
@@ -248,6 +252,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
                   result={result}
                   opportunity={result.opportunity}
                   clientOpportunity={result.clientOpportunity}
+                  salesReasoning={result.salesReasoning}
                   selected={selected.has(normUrl)}
                   saved={savedUrls.has(normUrl)}
                   onSelectionChange={handleToggle}

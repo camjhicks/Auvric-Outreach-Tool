@@ -11,6 +11,7 @@ import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
 import { computeWebsiteOpportunity } from './utils/websiteOpportunity'
 import { computeClientOpportunity } from './utils/clientOpportunity'
+import { computeSalesReasoning } from './utils/salesReasoning'
 import { getBestEmail } from './utils/bestEmail'
 import { isFollowUpDue } from './utils/followUp'
 import {
@@ -58,13 +59,16 @@ export default function App() {
       const opportunity = computeWebsiteOpportunity(data.evidence, { serviceFamily: null })
       // A manual single audit has no discovery metadata → website-only provisional
       // Client Opportunity (or Unable, if the audit was blocked).
-      const clientOpportunity = computeClientOpportunity({
+      const combinedInput = {
         ...opportunity,
         businessName: data.businessName ?? null,
         hasWebsite: true,
         normalizedUrl: data.url,
-      })
-      setAuditResult({ ...data, opportunity, clientOpportunity })
+      }
+      const clientOpportunity = computeClientOpportunity(combinedInput)
+      // Deterministic sales reasoning (website-only / cautious for a manual audit).
+      const salesReasoning = computeSalesReasoning({ ...combinedInput, ...clientOpportunity })
+      setAuditResult({ ...data, opportunity, clientOpportunity, salesReasoning })
       if (!data.accessError) {
         const n = incrementLeadsGenerated()
         setLeadsGenerated(n)
@@ -92,6 +96,7 @@ export default function App() {
       scoreBreakdown: auditResult.scoreBreakdown ?? [],
       opportunity: auditResult.opportunity ?? null,
       clientOpportunity: auditResult.clientOpportunity ?? null,
+      salesReasoning: auditResult.salesReasoning ?? null,
     })
     setLeads(updated)
   }
@@ -218,6 +223,7 @@ export default function App() {
           outreachError={outreachError}
           opportunity={auditResult?.opportunity}
           clientOpportunity={auditResult?.clientOpportunity}
+          salesReasoning={auditResult?.salesReasoning}
         />
       </main>
     </div>

@@ -1,5 +1,6 @@
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import ClientOpportunitySection from './ClientOpportunitySection'
+import SalesApproachSection from './SalesApproachSection'
 import styles from './BulkResultCard.module.css'
 
 function getDomain(url) {
@@ -13,7 +14,7 @@ const PRIORITY_COLOR = {
   'Low Priority':    '#f87171',
 }
 
-export default function BulkResultCard({ result, opportunity, clientOpportunity, selected = false, saved = false, onSelectionChange }) {
+export default function BulkResultCard({ result, opportunity, clientOpportunity, salesReasoning, selected = false, saved = false, onSelectionChange }) {
   const {
     normalizedUrl,
     accessError,
@@ -66,6 +67,8 @@ export default function BulkResultCard({ result, opportunity, clientOpportunity,
       )}
 
       {clientOpportunity && <ClientOpportunitySection clientOpportunity={clientOpportunity} />}
+
+      {salesReasoning && <SalesApproachSection salesReasoning={salesReasoning} />}
 
       {opportunity && <WebsiteOpportunitySection opportunity={opportunity} />}
 
