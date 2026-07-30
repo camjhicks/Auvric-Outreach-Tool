@@ -493,6 +493,91 @@ built yet; outreach-outcome learning is not included.
 **Next:** **Milestone 15B2B** — Personalized Sales Reasoning and Cold-Call Opener.
 **Planned later:** **Milestone 15C** — Call List system.
 
+## Navigation & session continuity (Milestone 15B2C)
+
+Scout behaves like a real application, not a single-page form that resets on refresh.
+
+**Route architecture.** Navigation uses real **pathname routes** backed by the browser
+History API (a small centralized hook in `src/hooks/useRoute.js` + `src/utils/routes.js`)
+— no router dependency was added, since the app has a handful of screens and the
+Express server already serves `index.html` for any non-`/api` path (SPA fallback), so a
+refresh or a direct visit to a valid route lands correctly. Back/Forward work naturally
+via `popstate`.
+
+**Supported routes:** `/` (home / single audit) · `/discovery` · `/bulk` · `/leads` ·
+`/leads/:id` (saved-lead detail) · `/queue` (follow-up queue). Routes for the future Call
+Queue / Email Queue are intentionally **not** defined yet. An unknown route recovers to
+Home (replace, so Back doesn't re-enter the bad URL); valid routes are never force-
+redirected home.
+
+**External business links open safely in a new tab.** Every link to an outside business
+website goes through a shared `ExternalLink` component: `target="_blank"`,
+`rel="noopener noreferrer"`, an accessible "opens in a new tab" name, and the **same safe
+URL validation** used for auditing/discovery (`normalizeWebsiteUrl` — http/https only;
+`javascript:`, `data:`, `ftp:`, `mailto:` and malformed URLs render as inert text, never
+a link). Opening a business site never navigates the Scout tab away or changes its state.
+
+**What temporary state is persisted** (in `sessionStorage`, one namespaced key
+`auvric_scout_session`, via `src/services/sessionState.js`): the current route; Discovery
+(niche, custom phrase, location, result limit, the already-returned normalized results,
+filters, sorting, and the eligible selection); Bulk Audit (input, seeded discovery
+metadata, completed compact results, selection, and a running/interrupted flag); Saved
+Leads list controls (search + status filter); the single-audit entered URL + compact
+result; and per-route scroll positions.
+
+**What is intentionally NOT persisted:** raw Google provider responses, raw HTML, API
+keys or request headers, or any oversized payload — only compact, already-normalized
+records the frontend already holds. **A refresh never re-runs a paid Google Places search
+or re-audits a website** — the previously returned results are restored as-is; network
+calls happen only on an explicit user action.
+
+**sessionStorage vs. permanent Saved Leads.** Transient working state lives in
+`sessionStorage`; the permanent Saved Leads continue to use their existing `localStorage`
+layer. The two are never mixed, and **resetting the session never touches Saved Leads**.
+
+**Storage schema & versioning.** The session snapshot carries a `version`, `updatedAt`,
+`route`, per-route slices, and `scroll` map. Reads are fully guarded: malformed JSON, a
+version mismatch, an expired snapshot, unavailable storage, or a quota failure all
+degrade to an empty (or in-memory) session instead of throwing. **Expiration policy:**
+transient state older than **12 hours** is discarded on load.
+
+**Filter & selection restoration.** Restored Discovery state re-applies filters and
+sorting, then prunes the selection through the current eligibility rules — no-website and
+filtered-out records can never come back selected, and the 20-URL Bulk cap still applies.
+Malformed or outdated persisted state is discarded in part without crashing.
+
+**Interrupted-audit behavior.** If a bulk audit was running when the page was refreshed,
+it is restored as **interrupted** (not "completed"), with a clear message and a
+user-initiated Retry. Audits are never auto-repeated and no duplicate requests are made.
+
+**Scroll restoration** is per-route: returning from an external tab, a refresh, or a Back
+navigation lands near the previous position; navigating to a fresh section starts at the
+top. Malformed scroll values are ignored; writes are debounced. Tested on a phone
+viewport.
+
+**Session reset.** A small **Reset workspace** control (in the header) clears the
+transient search/navigation state after a confirmation, and returns to Home. It does
+**not** delete Saved Leads or any settings. Returning Home on its own never clears state.
+
+**Multi-tab behavior.** The expected setup is one Scout working tab plus external
+business tabs — opening an external site never mutates Scout's session. If two Scout tabs
+are open, behavior is **last-write-wins** on the shared session key (no complex real-time
+merging) — chosen for reliability.
+
+**Invalid-route recovery / failure states:** corrupted storage, an old schema version,
+missing result IDs, stale selected IDs, a deleted saved-lead detail route, an unsafe
+external URL, or unavailable storage all degrade gracefully — the app stays usable and
+only shows a recovery message when it's actually useful.
+
+**Current limitations:** no cross-tab live sync; scroll restoration is best-effort
+(approximate, not pixel-perfect after layout changes); persisted Discovery/Bulk results
+are bounded (≤60 / ≤20 records) and expire after 12h.
+
+**Planned later milestones (not built here):** Saved Leads Hub · Business Profile Research
+for no-website leads · Call Queue · Email Queue · automatic lead routing · outreach-outcome
+tracking · the final Auvric Digital visual redesign (private welcome experience, executive
+dashboard, branding from `auvricdigital.live`).
+
 ## Local setup
 
 ```bash

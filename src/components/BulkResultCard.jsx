@@ -1,5 +1,6 @@
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import ClientOpportunitySection from './ClientOpportunitySection'
+import ExternalLink from './ExternalLink'
 import styles from './BulkResultCard.module.css'
 
 function getDomain(url) {
@@ -44,7 +45,7 @@ export default function BulkResultCard({ result, opportunity, clientOpportunity,
         ) : saved ? (
           <span className={styles.savedBadge}>Saved ✓</span>
         ) : null}
-        <span className={styles.domain} title={normalizedUrl}>{domain}</span>
+        <ExternalLink url={normalizedUrl} className={styles.domain} ariaLabel={`Open ${domain} (opens in a new tab)`}>{domain}</ExternalLink>
         {accessError
           ? <span className={styles.badgeError}>Access Error</span>
           : <span className={styles.badgeSuccess}>Success</span>

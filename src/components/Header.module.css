@@ -52,3 +52,36 @@
   border-color: var(--color-primary);
   color: var(--color-text);
 }
+
+/* Clickable logo (Home) — 15B2C navigation */
+.logoBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+.logoBtn:hover .logoText { color: var(--color-primary); }
+
+/* Small, unobtrusive reset-workspace control */
+.resetBtn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.45rem 0.7rem;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.resetBtn:hover {
+  opacity: 1;
+  color: var(--color-text);
+  border-color: var(--color-border);
+}

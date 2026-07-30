@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import styles from './AuditForm.module.css'
 
-export default function AuditForm({ onAudit, isLoading, inputError }) {
+export default function AuditForm({ onAudit, isLoading, inputError, initialUrl = '' }) {
   const [fields, setFields] = useState({
-    websiteUrl: '',
+    websiteUrl: initialUrl,
     businessName: '',
     industry: '',
   })

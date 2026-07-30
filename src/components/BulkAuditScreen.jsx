@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
 import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
+import { getSlice, setSlice } from '../services/sessionState'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { computeWebsiteOpportunity } from '../utils/websiteOpportunity'
 import { computeClientOpportunity } from '../utils/clientOpportunity'
@@ -43,17 +44,39 @@ function parseInput(text) {
   return { valid: capped, warnings }
 }
 
-export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, initialInput = '', discoveryBusinesses = [] }) {
-  const [input, setInput] = useState(initialInput)
+export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
+  // Restore transient Bulk Audit working state from the session slice (Milestone
+  // 15B2C): the input, the discovery metadata seeded from Lead Discovery, the
+  // already-completed compact audit results, and the selection. Website audits are
+  // NEVER auto-re-run on restore — only a user Retry/Start triggers network calls.
+  const [saved] = useState(() => getSlice('bulk') ?? {})
+  const [input, setInput] = useState(saved.input ?? '')
   const [isLoading, setIsLoading] = useState(false)
-  const [results, setResults] = useState(null)
+  const [results, setResults] = useState(Array.isArray(saved.results) ? saved.results : null)
   const [apiError, setApiError] = useState(null)
-  const [selected, setSelected] = useState(new Set())
+  const [selected, setSelected] = useState(() => new Set(Array.isArray(saved.selected) ? saved.selected : []))
   const [saveMessage, setSaveMessage] = useState(null)
   const [exportError, setExportError] = useState(null)
+  const [discoveryBusinesses] = useState(() => Array.isArray(saved.discoveryBusinesses) ? saved.discoveryBusinesses : [])
+  // An audit that was running when the page was refreshed left running:true with no
+  // results — surface it as interrupted with a clear Retry, and never pretend it finished.
+  const [interrupted, setInterrupted] = useState(() => saved.running === true && !Array.isArray(saved.results))
 
   const { valid, warnings } = useMemo(() => parseInput(input), [input])
   const hasInput = input.trim().length > 0
+
+  // Persist compact Bulk state so a refresh/tab-return restores it. `results` carry
+  // only compact normalized audit data (evidence booleans/snippets) — no raw HTML.
+  useEffect(() => {
+    setSlice('bulk', {
+      input,
+      discoveryBusinesses,
+      results,
+      selected: [...selected],
+      running: isLoading,
+      seededAt: saved.seededAt ?? Date.now(),
+    })
+  }, [input, results, selected, isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set of normalized URLs already in the leads system — recomputed when leads changes
   const savedUrls = useMemo(
@@ -99,6 +122,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
     setSelected(new Set())
     setSaveMessage(null)
     setExportError(null)
+    setInterrupted(false)
     setIsLoading(true)
     try {
       const data = await runBulkAudit(valid)
@@ -187,6 +211,13 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
             <li key={i} className={styles.warningItem}>{w}</li>
           ))}
         </ul>
+      )}
+
+      {interrupted && (
+        <div className={styles.interrupted} role="status">
+          The previous bulk audit was interrupted before it finished. Nothing was re-run
+          automatically — click Start Bulk Audit to retry.
+        </div>
       )}
 
       <button

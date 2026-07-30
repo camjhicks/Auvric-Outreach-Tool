@@ -11,6 +11,7 @@ import {
 } from '../utils/discoveryFilters'
 import DiscoveryFilters from './DiscoveryFilters'
 import DiscoveredBusinessCard from './DiscoveredBusinessCard'
+import { getSlice, setSlice } from '../services/sessionState'
 import styles from './LeadDiscoveryScreen.module.css'
 
 const LIMIT_PRESETS = [10, 20, 50]
@@ -26,21 +27,23 @@ const ENABLED_NICHES = getEnabledNiches()
 const ACTIVE_FILTER_KEYS = ['reviewPreset', 'ratingPreset', 'websiteStatus', 'phoneStatus', 'tierFilter', 'excludeChains', 'excludeTempClosed']
 
 export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
-  // Default UX: no niche pre-selected (neutral — Scout is niche-agnostic, not
-  // HVAC-first). The user must pick a niche or enter a custom search.
-  const [nicheId, setNicheId] = useState('')
-  const [customPhrase, setCustomPhrase] = useState('')
-  const [location, setLocation] = useState('')
+  // Restore transient Discovery working state from the session slice (Milestone
+  // 15B2C). A refresh or tab-return keeps the search inputs, the already-returned
+  // normalized results, filters, sorting, and eligible selection — WITHOUT re-running
+  // any paid Google Places search. Only compact, already-normalized records are held.
+  const [saved] = useState(() => getSlice('discovery') ?? {})
+  const [nicheId, setNicheId] = useState(saved.nicheId ?? '')
+  const [customPhrase, setCustomPhrase] = useState(saved.customPhrase ?? '')
+  const [location, setLocation] = useState(saved.location ?? '')
   // Limit control: a preset (10/20/50) or a validated custom value (1–MAX_LIMIT).
-  const [limitChoice, setLimitChoice] = useState(String(DEFAULT_LIMIT)) // '10' | '20' | '50' | 'custom'
-  const [customLimit, setCustomLimit] = useState('')
+  const [limitChoice, setLimitChoice] = useState(saved.limitChoice ?? String(DEFAULT_LIMIT))
+  const [customLimit, setCustomLimit] = useState(saved.customLimit ?? '')
 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [result, setResult] = useState(null) // { query, businesses, totalFound }
-  const [selected, setSelected] = useState(new Set()) // providerIds
-  // Filter/sort state (component-local; see README for the persistence decision).
-  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [result, setResult] = useState(saved.result ?? null) // { query, businesses, totalFound, niche }
+  const [selected, setSelected] = useState(() => new Set(Array.isArray(saved.selected) ? saved.selected : [])) // providerIds
+  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, ...(saved.filters && typeof saved.filters === 'object' ? saved.filters : {}) }))
 
   const nicheSearch = useMemo(
     () => resolveNicheSearch(nicheId, customPhrase),
@@ -87,6 +90,16 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
       return pruned.size === prev.size ? prev : pruned
     })
   }, [businesses])
+
+  // Persist compact Discovery working state so a refresh / tab-return restores it.
+  // Only the already-normalized results are stored (never a raw provider response),
+  // and the search is NOT re-run on restore — these results are reused as-is.
+  useEffect(() => {
+    setSlice('discovery', {
+      nicheId, customPhrase, location, limitChoice, customLimit,
+      filters, selected: [...selected], result,
+    })
+  }, [nicheId, customPhrase, location, limitChoice, customLimit, filters, selected, result])
 
   // Normalized URLs claimed by the current selection — blocks selecting a
   // second business that resolves to the same website.

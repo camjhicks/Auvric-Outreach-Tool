@@ -1,6 +1,7 @@
 import OutreachDraft from './OutreachDraft'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import ClientOpportunitySection from './ClientOpportunitySection'
+import ExternalLink from './ExternalLink'
 import styles from './ResultsArea.module.css'
 
 export default function ResultsArea({
@@ -43,7 +44,7 @@ export default function ResultsArea({
     <section className={styles.container}>
       <div className={styles.card}>
         <div className={styles.meta}>
-          <MetaRow label="URL" value={url} />
+          <MetaRow label="URL" value={<ExternalLink url={url}>{url}</ExternalLink>} />
           {businessName && <MetaRow label="Business" value={businessName} />}
           {industry && <MetaRow label="Industry" value={industry} />}
           {pagesChecked && pagesChecked.length > 0 && (

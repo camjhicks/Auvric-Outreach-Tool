@@ -3,6 +3,7 @@ import LeadOutreachEditor from './LeadOutreachEditor'
 import ConfirmModal from './ConfirmModal'
 import ClientOpportunitySection from './ClientOpportunitySection'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
+import ExternalLink from './ExternalLink'
 import styles from './LeadDetailsScreen.module.css'
 
 function getDomain(url) {
@@ -83,9 +84,7 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
         <Section title="Business Information">
           {lead.businessName && <InfoRow label="Business">{lead.businessName}</InfoRow>}
           <InfoRow label="Website">
-            <a href={lead.websiteUrl} target="_blank" rel="noreferrer" className={styles.link}>
-              {lead.websiteUrl}
-            </a>
+            <ExternalLink url={lead.websiteUrl} className={styles.link}>{lead.websiteUrl}</ExternalLink>
           </InfoRow>
           {lead.industry && <InfoRow label="Industry">{lead.industry}</InfoRow>}
           <InfoRow label="Saved">{dateLabel}</InfoRow>

@@ -238,3 +238,14 @@
   color: var(--color-muted);
   font-size: 0.875rem;
 }
+
+/* Interrupted-audit notice — 15B2C session restoration */
+.interrupted {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  color: #fbbf24;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  padding: 0.7rem 0.85rem;
+}

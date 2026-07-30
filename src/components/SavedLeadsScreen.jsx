@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import LeadCard from './LeadCard'
 import LeadDetailsScreen from './LeadDetailsScreen'
 import SearchBar from './SearchBar'
 import { updateLead, deleteLead, saveOutreachDraft, STATUS_OPTIONS } from '../services/leadStorage'
+import { getSlice, setSlice } from '../services/sessionState'
 import { downloadLeadsCSV } from '../utils/exportCsv'
 import { getFollowUpUpdate } from '../utils/followUp'
 import styles from './SavedLeadsScreen.module.css'
@@ -13,12 +14,26 @@ function getDomain(url) {
   try { return new URL(url).hostname } catch { return url }
 }
 
-export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
-  const [query, setQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All')
-  const [selectedLeadId, setSelectedLeadId] = useState(null)
+// Saved-lead detail navigation is route-driven (/leads/:id via App). The list's
+// search + status filter are transient and restored from the session slice.
+export default function SavedLeadsScreen({ leads, onBack, onLeadsChange, selectedLeadId = null, onOpenLead, onCloseLead }) {
+  const restored = getSlice('savedLeads') ?? {}
+  const [query, setQuery] = useState(restored.query ?? '')
+  const [statusFilter, setStatusFilter] = useState(
+    FILTER_OPTIONS.includes(restored.statusFilter) ? restored.statusFilter : 'All'
+  )
+
+  // Persist the transient list controls (never the permanent Saved Leads data).
+  useEffect(() => {
+    setSlice('savedLeads', { query, statusFilter })
+  }, [query, statusFilter])
 
   const selectedLead = selectedLeadId ? leads.find(l => l.id === selectedLeadId) : null
+
+  // A detail route pointing at a deleted / missing lead recovers to the list.
+  useEffect(() => {
+    if (selectedLeadId && !selectedLead && onCloseLead) onCloseLead()
+  }, [selectedLeadId, selectedLead]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleStatusChange(id, status) {
     const lead = leads.find(l => l.id === id)
@@ -34,7 +49,7 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
   }
 
   function handleDelete(id) {
-    if (selectedLeadId === id) setSelectedLeadId(null)
+    if (selectedLeadId === id && onCloseLead) onCloseLead()
     onLeadsChange(deleteLead(id))
   }
 
@@ -66,7 +81,7 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
     return (
       <LeadDetailsScreen
         lead={selectedLead}
-        onBack={() => setSelectedLeadId(null)}
+        onBack={() => onCloseLead && onCloseLead()}
         onNotesChange={handleNotesChange}
         onOutreachSave={handleOutreachSave}
       />
@@ -129,7 +144,7 @@ export default function SavedLeadsScreen({ leads, onBack, onLeadsChange }) {
               onStatusChange={handleStatusChange}
               onNotesChange={handleNotesChange}
               onDelete={handleDelete}
-              onViewDetails={setSelectedLeadId}
+              onViewDetails={id => onOpenLead && onOpenLead(id)}
             />
           ))}
         </div>

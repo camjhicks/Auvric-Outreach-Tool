@@ -1,3 +1,4 @@
+import ExternalLink from './ExternalLink'
 import styles from './DiscoveredBusinessCard.module.css'
 
 const STATUS_LABEL = {
@@ -126,14 +127,7 @@ export default function DiscoveredBusinessCard({
         {eligible ? (
           <div className={styles.row}>
             <span className={styles.label}>Website</span>
-            <a
-              href={websiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.link}
-            >
-              {getDomain(websiteUrl)}
-            </a>
+            <ExternalLink url={websiteUrl} className={styles.link}>{getDomain(websiteUrl)}</ExternalLink>
           </div>
         ) : null}
 
