@@ -4,16 +4,23 @@ import { calculateLeadScore } from '../utils/calculateLeadScore.js'
 import { safeFetch } from '../utils/safeFetch.js'
 import { SsrfError } from '../utils/ssrfGuard.js'
 import { extractAuditEvidence } from '../utils/extractAuditEvidence.js'
+import { analyzeSiteHealth } from '../utils/analyzeSiteHealth.js'
+import { buildAuditNotes } from '../utils/buildAuditNotes.js'
 
 const FETCH_TIMEOUT_MS = 10_000
 const USER_AGENT = 'Mozilla/5.0 (compatible; AuvricScout/1.0; +https://auvric.com)'
 
-function accessErrorResult(url, errorMessage = null) {
+// A non-loading site (blocked / timeout / http error / network) still produces a full,
+// explained audit result — it never disappears from the output.
+function accessErrorResult(url, { errorMessage = null, errorKind = 'network', httpStatus = null } = {}) {
   const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({
     emails: [],
     auditNotes: [],
     accessError: true,
   })
+  const siteHealth = analyzeSiteHealth({ requestedUrl: url, finalUrl: url, httpStatus, errorKind, homepageLoaded: false })
+  const evidence = extractAuditEvidence([], { requestedUrl: url, finalUrl: url, blocked: true, errorMessage })
+  const notes = buildAuditNotes({ siteHealth, evidence })
   return {
     normalizedUrl: url,
     success: false,
@@ -21,70 +28,76 @@ function accessErrorResult(url, errorMessage = null) {
     errorMessage,
     emailsFound: [],
     pagesChecked: [],
-    auditNotes: [],
     leadScore,
     leadPriority,
     scoreBreakdown,
-    // Compact evidence marking the audit as unevaluable (blocked / failed).
-    evidence: extractAuditEvidence([], { requestedUrl: url, finalUrl: url, blocked: true, errorMessage }),
+    evidence,
+    siteHealth,
+    ...notes, // auditSummary, auditNotes, auditStrengths, auditWeaknesses, auditLimitations, etc.
   }
 }
 
 /**
- * Audits a single normalized URL. Never throws — errors are captured as
- * structured access-error results so callers can use Promise.allSettled safely.
- *
+ * Audits a single normalized URL. Never throws — errors become structured
+ * access-error results (still with site-health + notes) so callers can use
+ * Promise.allSettled safely.
  * @param {string} url  Fully-qualified http/https URL (already normalized)
- * @returns {Promise<{
- *   normalizedUrl: string,
- *   success: boolean,
- *   accessError: boolean,
- *   errorMessage: string | null,
- *   emailsFound: string[],
- *   pagesChecked: string[],
- *   auditNotes: string[],
- *   leadScore: number,
- *   leadPriority: string,
- *   scoreBreakdown: string[],
- * }>}
  */
 export async function auditWebsite(url) {
   let html
   let finalUrl = url
+  let httpStatus = null
+  let redirectCount = 0
 
   try {
     // safeFetch enforces SSRF protection on the URL and every redirect hop.
-    const { response, finalUrl: resolvedUrl } = await safeFetch(url, {
+    const { response, finalUrl: resolvedUrl, redirects } = await safeFetch(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
       headers: { 'User-Agent': USER_AGENT },
     })
+    httpStatus = response.status
+    redirectCount = redirects ?? 0
 
     if (!response.ok) {
-      return accessErrorResult(resolvedUrl)
+      return accessErrorResult(resolvedUrl, {
+        errorMessage: `The website returned an HTTP ${response.status} error.`,
+        errorKind: 'http_error',
+        httpStatus: response.status,
+      })
     }
 
     finalUrl = resolvedUrl
     html = await response.text()
   } catch (err) {
-    const msg = err instanceof SsrfError
-      ? 'This website address is not allowed.'
-      : err.name === 'AbortError'
-        ? 'Request timed out — the site took too long to respond.'
-        : 'Unable to access this website right now.'
-    return accessErrorResult(url, msg)
+    if (err instanceof SsrfError) {
+      return accessErrorResult(url, { errorMessage: 'This website address is not allowed.', errorKind: 'blocked' })
+    }
+    if (err?.name === 'AbortError') {
+      return accessErrorResult(url, { errorMessage: 'Request timed out — the site took too long to respond.', errorKind: 'timeout' })
+    }
+    return accessErrorResult(url, { errorMessage: 'Unable to access this website right now.', errorKind: 'network' })
   }
 
-  const { emails, pagesChecked, pages } = await crawlContactPages(finalUrl, html)
-  const auditNotes = generateAuditNotes(html)
+  const { emails, pagesChecked, pages, pagesAttempted, pagesLoaded, pagesFailed, extraAttempted } =
+    await crawlContactPages(finalUrl, html)
+
+  // Legacy issue notes feed the (unchanged) lead-score calculation.
+  const legacyNotes = generateAuditNotes(html)
   const { leadScore, leadPriority, scoreBreakdown } = calculateLeadScore({
     emails,
-    auditNotes,
+    auditNotes: legacyNotes,
     accessError: false,
   })
 
-  // Extract compact website-opportunity evidence, then let the page HTML be
-  // garbage-collected — raw HTML is never returned or persisted.
-  const evidence = extractAuditEvidence(pages, { requestedUrl: url, finalUrl })
+  // Compact website-opportunity + contact/booking evidence, then the HTML is GC'd —
+  // raw HTML is never returned or persisted.
+  const evidence = extractAuditEvidence(pages, { requestedUrl: url, finalUrl, pagesLoaded, extraAttempted })
+  const sslOrProtocolIssue = evidence.technicalEvidence?.mixedContent === true
+  const siteHealth = analyzeSiteHealth({
+    requestedUrl: url, finalUrl, httpStatus, redirectCount,
+    homepageLoaded: true, pagesAttempted, pagesLoaded, pagesFailed, sslOrProtocolIssue,
+  })
+  const notes = buildAuditNotes({ siteHealth, evidence })
 
   return {
     normalizedUrl: finalUrl,
@@ -93,10 +106,11 @@ export async function auditWebsite(url) {
     errorMessage: null,
     emailsFound: emails,
     pagesChecked,
-    auditNotes,
     leadScore,
     leadPriority,
     scoreBreakdown,
     evidence,
+    siteHealth,
+    ...notes,
   }
 }

@@ -128,12 +128,33 @@ export default function App() {
     setOutreachError(null)
     setIsGeneratingOutreach(true)
     try {
+      // Compact, approved audit evidence (no raw HTML) grounds the email.
+      const ar = auditResult
+      const audit = {
+        serviceFamily: ar.serviceFamily ?? null,
+        nicheLabel: ar.selectedNicheLabel ?? ar.industry ?? null,
+        city: ar.city ?? null,
+        rating: ar.rating ?? null,
+        reviewCount: ar.reviewCount ?? null,
+        reviewBand: ar.reviewBand ?? null,
+        hasWebsite: true,
+        siteAvailabilityStatus: ar.siteHealth?.siteAvailabilityStatus ?? null,
+        siteHealthConfidence: ar.siteHealth?.siteHealthConfidence ?? null,
+        auditConfidence: ar.evidence?.contactPath?.contactPathConfidence ?? ar.siteHealth?.siteHealthConfidence ?? null,
+        recommendedOutreachAngle: ar.recommendedOutreachAngle ?? null,
+        primaryBookingFinding: ar.primaryBookingFinding ?? null,
+        bookingPathStatus: ar.evidence?.bookingPath?.bookingPathStatus ?? null,
+        contactPathConfidence: ar.evidence?.contactPath?.contactPathConfidence ?? null,
+        auditLimitations: ar.auditLimitations ?? [],
+      }
       const draft = await generateOutreach({
-        url: auditResult.url,
-        businessName: auditResult.businessName,
-        industry: auditResult.industry,
+        url: ar.url,
+        businessName: ar.businessName,
+        industry: ar.industry,
         email,
+        audit,
       })
+      // Only replace on success — a failed retry keeps the last successful draft.
       setOutreachDraft({ ...draft, emailUsed: email })
     } catch (err) {
       setOutreachError(err.message)

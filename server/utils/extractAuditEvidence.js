@@ -22,6 +22,21 @@ const SERVICE_TERMS = ['repair', 'installation', 'install', 'maintenance', 'repl
 const NEXT_STEP_TERMS = ['what to expect', 'next step', 'how it works', 'our process', 'what happens next']
 const BOOKING_KEYWORDS = ['book', 'schedule', 'appointment', 'booking', 'reserve']
 
+// ---- 15B3: separated contact / booking detection ------------------------
+// Known third-party scheduling/booking providers (host suffix match).
+const SCHEDULER_HOSTS = ['calendly.com', 'acuityscheduling.com', 'squareup.com', 'setmore.com', 'booksy.com',
+  'vagaro.com', 'schedulicity.com', 'housecallpro.com', 'getjobber.com', 'jobber.com', 'mytime.com',
+  'simplybook.me', 'zenoti.com', 'genbook.com', 'servicetitan.com', 'appointy.com', 'youcanbook.me',
+  'square.site', 'gettimely.com', 'mindbodyonline.com', 'schedulista.com']
+const BOOK_CTA_TERMS = ['book now', 'book online', 'book an appointment', 'schedule now', 'schedule service', 'schedule an appointment', 'make an appointment', 'reserve now', 'start your project']
+const QUOTE_TERMS = ['request a quote', 'get a quote', 'free quote', 'request an estimate', 'get an estimate', 'free estimate', 'get a free estimate', 'request a free estimate']
+const SERVICE_REQUEST_TERMS = ['request service', 'service request', 'request a service', 'request repair']
+const CONSULTATION_TERMS = ['free consultation', 'request a consultation', 'book a consultation', 'schedule a consultation', 'consultation request']
+const CALL_CTA_TERMS = ['call now', 'call us', 'call today']
+const TEXT_CTA_TERMS = ['text us', 'text now', 'send a text']
+const ADDRESS_RE = /\d{1,6}\s+[A-Za-z0-9.\s]{2,40}\b(street|st|avenue|ave|road|rd|blvd|boulevard|drive|dr|lane|ln|way|court|ct|suite|ste|highway|hwy)\b/i
+const CONTACT_HEADING_RE = /<(h[1-6]|section|div|footer)\b[^>]*(id|class)\s*=\s*["'][^"']*contact[^"']*["']/i
+
 function plainText(html) {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -99,6 +114,28 @@ function extractPage(html, url, baseUrl) {
   const isHttps = /^https:/i.test(url)
   const mixedContent = isHttps && /\s(src|href)\s*=\s*["']http:\/\//i.test(html)
 
+  // --- 15B3 separated contact/booking signals ---
+  // Scheduler provider hosts referenced in anchors, iframes, or scripts.
+  const schedulerHosts = []
+  for (const m of html.matchAll(/<(?:a|iframe|script)\b[^>]*\s(?:href|src)\s*=\s*["']([^"']+)["']/gi)) {
+    const h = hostOf(m[1], url)
+    if (h && SCHEDULER_HOSTS.some(s => h === s || h.endsWith('.' + s))) schedulerHosts.push(h.replace(/^www\./, ''))
+  }
+  const iframeSchedulers = [...html.matchAll(/<iframe\b[^>]*\ssrc\s*=\s*["']([^"']+)["']/gi)]
+    .map(m => hostOf(m[1], url)).filter(h => h && SCHEDULER_HOSTS.some(s => h === s || h.endsWith('.' + s)))
+  const callButton = /href\s*=\s*["']tel:/i.test(html)
+  const textButton = /href\s*=\s*["']sms:/i.test(html)
+  const bookCta = BOOK_CTA_TERMS.some(t => lower.includes(t))
+  const quoteWording = QUOTE_TERMS.some(t => lower.includes(t))
+  const serviceRequestWording = SERVICE_REQUEST_TERMS.some(t => lower.includes(t))
+  const consultationWording = CONSULTATION_TERMS.some(t => lower.includes(t))
+  const callCta = CALL_CTA_TERMS.some(t => lower.includes(t))
+  const textCta = TEXT_CTA_TERMS.some(t => lower.includes(t))
+  const contactHeading = CONTACT_HEADING_RE.test(html) || /\bcontact us\b/.test(lower) || />\s*contact\s*</i.test(html)
+  const addressPresent = ADDRESS_RE.test(text)
+  // A "real" contact/quote/service form has multiple fields or an email/message field.
+  const realForms = forms.filter(fm => (fm.fieldCount ?? 0) >= 2 || fm.hasEmailField)
+
   const footerIdx = rawLower.lastIndexOf('<footer')
   const footerSnippet = (footerIdx >= 0 ? plainText(html.slice(footerIdx)) : text.slice(-CAP.snippet)).slice(0, CAP.snippet).toLowerCase()
 
@@ -126,6 +163,10 @@ function extractPage(html, url, baseUrl) {
     nextStep: has(NEXT_STEP_TERMS),
     hasServicePage: [...html.matchAll(/<a\b[^>]*\shref\s*=\s*["']([^"']+)["']/gi)].some(m => /service/i.test(m[1])),
     hasForm: /<form[\s>]/i.test(html),
+    // 15B3 contact/booking signals
+    schedulerHosts, iframeSchedulers, callButton, textButton, bookCta, quoteWording,
+    serviceRequestWording, consultationWording, callCta, textCta, contactHeading, addressPresent,
+    realFormCount: realForms.length, maxFormFields: forms.reduce((m, fm) => Math.max(m, fm.fieldCount ?? 0), 0),
   }
 }
 
@@ -135,7 +176,8 @@ function extractPage(html, url, baseUrl) {
  * @param {{ requestedUrl:string, finalUrl:string, blocked?:boolean, errorMessage?:string }} meta
  */
 export function extractAuditEvidence(pages, meta = {}) {
-  const { requestedUrl = null, finalUrl = null, blocked = false, errorMessage = null } = meta
+  const { requestedUrl = null, finalUrl = null, blocked = false, errorMessage = null,
+    pagesLoaded = null, extraAttempted = null } = meta
 
   if (blocked || !Array.isArray(pages) || pages.length === 0) {
     return {
@@ -147,6 +189,21 @@ export function extractAuditEvidence(pages, meta = {}) {
       callToActionEvidence: { phrasesFound: [], count: 0, heroCta: false },
       trustSignalEvidence: {}, serviceClarityEvidence: {}, mobileTechnicalEvidence: {}, technicalEvidence: {},
       templateEvidence: { scriptHosts: [], stylesheetHosts: [], generatorMeta: null, footerSnippet: '' },
+      coverageSufficient: false,
+      contactPath: {
+        contactSectionFound: false, contactSectionEvidence: 'The site could not be inspected.',
+        contactFormFound: false, contactFormEvidence: 'The site could not be inspected.', contactFormFieldCount: 0,
+        quoteRequestFound: false, quoteRequestEvidence: 'The site could not be inspected.',
+        serviceRequestFound: false, serviceRequestEvidence: 'The site could not be inspected.',
+        bookingOptionFound: false, bookingOptionType: 'none', bookingProvider: null,
+        bookingEvidence: 'The site could not be inspected.', phoneOnlyContactFlow: false,
+        contactPathConfidence: 'low', callButton: false, textButton: false,
+      },
+      bookingPath: {
+        bookingPathStatus: 'unable_to_verify', bookingPathType: 'none', bookingStepsObserved: [],
+        primaryBookingAction: null, bookingCtaFound: false, bookingCtaProminence: 'none',
+        bookingFrictionReasons: [], bookingEvidence: 'The site could not be inspected.', bookingConfidence: 'low',
+      },
       auditLimitations: [errorMessage || 'The website blocked automated access, so booking and trust signals could not be evaluated.'],
     }
   }
@@ -166,6 +223,133 @@ export function extractAuditEvidence(pages, meta = {}) {
 
   const limitations = ['Visual mobile responsiveness was not browser-rendered and could not be fully verified.']
   if (pages.length === 1) limitations.push('Only the homepage was available; service-page coverage is limited.')
+
+  // --- 15B3: separated contact + booking analysis (evidence-based, coverage-aware) ---
+  const loadedCount = typeof pagesLoaded === 'number' ? pagesLoaded : pages.length
+  const extraTried = typeof extraAttempted === 'number' ? extraAttempted : 0
+  // Coverage is "sufficient" for a NEGATIVE claim (e.g. "no form") only when we saw
+  // more than the homepage, or the homepage had no contact/booking links to follow.
+  const coverageSufficient = loadedCount >= 2 || extraTried === 0
+
+  const phonePresent = phones.length > 0
+  const emailPresent = emails.length > 0
+  const realForm = anyTrue(e => e.realFormCount > 0)
+  const contactFormFieldCount = realForm ? Math.max(...per.map(p => p.e.maxFormFields)) : 0
+  const addressPresent = anyTrue(e => e.addressPresent)
+  const contactHeading = anyTrue(e => e.contactHeading)
+  const schedulerHostList = uniqCap(per.flatMap(p => p.e.schedulerHosts))
+  const embeddedScheduler = anyTrue(e => e.iframeSchedulers.length > 0)
+  const bookCta = anyTrue(e => e.bookCta)
+  const bookingLinkPresent = anyTrue(e => e.bookingLink)
+  const quoteWording = anyTrue(e => e.quoteWording)
+  const quoteFormBacked = anyTrue(e => e.quoteWording && e.realFormCount > 0)
+  const serviceReqWording = anyTrue(e => e.serviceRequestWording)
+  const serviceFormBacked = anyTrue(e => e.serviceRequestWording && e.realFormCount > 0)
+  const consultWording = anyTrue(e => e.consultationWording)
+  const callButton = anyTrue(e => e.callButton) || anyTrue(e => e.callCta)
+  const textButton = anyTrue(e => e.textButton) || anyTrue(e => e.textCta)
+
+  const contactSectionFound = contactHeading || (phonePresent && (addressPresent || emailPresent))
+  const anyBookingAction = schedulerHostList.length > 0 || embeddedScheduler || bookCta || bookingLinkPresent
+  const bookingOptionFound = anyBookingAction || quoteFormBacked || serviceFormBacked || (consultWording && realForm)
+
+  let bookingOptionType = 'unknown'
+  if (schedulerHostList.length > 0) bookingOptionType = 'external_scheduler'
+  else if (embeddedScheduler) bookingOptionType = 'embedded_widget'
+  else if (bookingLinkPresent || bookCta) bookingOptionType = 'internal_booking_page'
+  else if (quoteFormBacked) bookingOptionType = 'quote_form'
+  else if (serviceFormBacked) bookingOptionType = 'service_request_form'
+  else if (consultWording && realForm) bookingOptionType = 'consultation_form'
+  else if (realForm) bookingOptionType = 'contact_form'
+  else if (phonePresent) bookingOptionType = 'phone'
+  else if (emailPresent) bookingOptionType = 'email'
+
+  const phoneOnlyContactFlow = phonePresent && !realForm && !anyBookingAction && !quoteWording && !serviceReqWording
+
+  // Booking-path status (see SUGGESTED statuses). Distinguishes not_found (verified
+  // absence with enough coverage) from unable_to_verify (insufficient coverage).
+  let bookingPathStatus
+  if (anyBookingAction) bookingPathStatus = 'clear_booking_path'
+  else if (quoteWording && (quoteFormBacked || coverageSufficient)) bookingPathStatus = 'clear_quote_path'
+  else if (serviceReqWording && (serviceFormBacked || coverageSufficient)) bookingPathStatus = 'clear_service_request'
+  else if (realForm) bookingPathStatus = 'contact_form_only'
+  else if (phoneOnlyContactFlow) bookingPathStatus = 'phone_only'
+  else if (emailPresent && !phonePresent) bookingPathStatus = 'email_only'
+  else if (coverageSufficient) bookingPathStatus = 'not_found'
+  else bookingPathStatus = 'unable_to_verify'
+
+  const bookingPathType = bookingOptionFound ? bookingOptionType
+    : bookingPathStatus === 'phone_only' ? 'phone'
+    : bookingPathStatus === 'email_only' ? 'email'
+    : bookingPathStatus === 'contact_form_only' ? 'contact_form' : 'none'
+
+  const primaryBookingAction = schedulerHostList.length > 0 ? 'Online scheduler'
+    : embeddedScheduler ? 'Embedded scheduler'
+    : bookCta ? 'Book / Schedule online'
+    : quoteWording ? 'Request a quote/estimate'
+    : serviceReqWording ? 'Request service'
+    : realForm ? 'Contact form'
+    : phonePresent ? 'Phone call'
+    : emailPresent ? 'Email' : null
+
+  const bookingCtaProminence = (home.bookCta || home.quoteWording || home.serviceRequestWording) && home.heroCta ? 'prominent'
+    : anyBookingAction || quoteWording || serviceReqWording ? 'secondary' : 'none'
+
+  const contactPathConfidence = !coverageSufficient ? 'low'
+    : (realForm || bookingOptionFound || phonePresent) ? 'high' : 'medium'
+  const bookingConfidence = !coverageSufficient ? 'low'
+    : (schedulerHostList.length > 0 || embeddedScheduler || quoteFormBacked || serviceFormBacked) ? 'high'
+    : (anyBookingAction || realForm) ? 'medium' : (coverageSufficient ? 'medium' : 'low')
+
+  if (!coverageSufficient && !bookingOptionFound) {
+    limitations.push('Not enough relevant pages could be checked to confirm whether a booking, quote, or contact form exists.')
+  }
+
+  const bookingReasons = []
+  if (phoneOnlyContactFlow) bookingReasons.push('Calling appears to be the only clear way to get started.')
+  if (bookingPathStatus === 'contact_form_only') bookingReasons.push('A contact form exists, but no dedicated booking or quote/estimate path was found.')
+  if (bookingPathStatus === 'not_found') bookingReasons.push('No booking, quote, service-request, or contact form path was verified across the pages checked.')
+
+  const contactPath = {
+    contactSectionFound,
+    contactSectionEvidence: contactSectionFound
+      ? (contactHeading ? 'A contact section/heading was found.' : 'Contact information (phone/address) was found on the page.')
+      : (coverageSufficient ? 'No clear contact section was found.' : 'A contact section could not be confirmed with the pages checked.'),
+    contactFormFound: realForm,
+    contactFormEvidence: realForm
+      ? `A contact form with ${contactFormFieldCount} field${contactFormFieldCount !== 1 ? 's' : ''} was found.`
+      : (coverageSufficient ? 'No contact form was found on the pages checked.' : 'No contact form was found, but not enough pages could be checked to be sure.'),
+    contactFormFieldCount,
+    quoteRequestFound: quoteWording,
+    quoteRequestEvidence: quoteWording ? (quoteFormBacked ? 'A quote/estimate request form was found.' : 'Quote/estimate request wording was found.') : 'No quote/estimate request path was found.',
+    serviceRequestFound: serviceReqWording,
+    serviceRequestEvidence: serviceReqWording ? (serviceFormBacked ? 'A service-request form was found.' : 'Service-request wording was found.') : 'No service-request path was found.',
+    bookingOptionFound,
+    bookingOptionType: bookingOptionFound ? bookingOptionType : 'none',
+    bookingProvider: schedulerHostList[0] ?? null,
+    bookingEvidence: bookingOptionFound
+      ? (schedulerHostList.length > 0 ? `An external scheduler was linked (${schedulerHostList[0]}).`
+        : embeddedScheduler ? 'An embedded scheduling widget was detected.'
+        : bookCta || bookingLinkPresent ? 'A book/schedule action was found.'
+        : quoteFormBacked ? 'A quote/estimate request form was found.'
+        : serviceFormBacked ? 'A service-request form was found.' : 'A booking-oriented form was found.')
+      : (coverageSufficient ? 'No booking or scheduling option was found.' : 'A booking option could not be confirmed with the pages checked.'),
+    phoneOnlyContactFlow,
+    contactPathConfidence,
+    callButton, textButton,
+  }
+
+  const bookingPath = {
+    bookingPathStatus,
+    bookingPathType,
+    bookingStepsObserved: [primaryBookingAction].filter(Boolean),
+    primaryBookingAction,
+    bookingCtaFound: anyBookingAction || quoteWording || serviceReqWording,
+    bookingCtaProminence,
+    bookingFrictionReasons: bookingReasons,
+    bookingEvidence: contactPath.bookingEvidence,
+    bookingConfidence,
+  }
 
   return {
     auditedUrl: baseUrl, requestedUrl, finalUrl,
@@ -224,6 +408,10 @@ export function extractAuditEvidence(pages, meta = {}) {
       generatorMeta: home.generatorMeta,
       footerSnippet: home.footerSnippet,
     },
+    // 15B3: separated contact + booking evidence, and coverage awareness.
+    coverageSufficient,
+    contactPath,
+    bookingPath,
     auditLimitations: limitations,
   }
 }

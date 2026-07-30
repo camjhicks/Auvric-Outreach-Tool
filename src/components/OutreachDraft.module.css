@@ -121,3 +121,16 @@
   background: transparent;
   color: #4ade80;
 }
+
+/* 15B3: generation source + evidence metadata */
+.metaRow { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.4rem; }
+.sourceBadge { font-size: 0.68rem; font-weight: 700; padding: 0.12rem 0.55rem; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+.sourceAi { color: #4ade80; border-color: #4ade80; }
+.sourceFallback { color: #fbbf24; border-color: #fbbf24; }
+.metaChip { font-size: 0.66rem; font-weight: 600; color: var(--color-muted); border: 1px solid var(--color-border); border-radius: 20px; padding: 0.1rem 0.5rem; }
+.painPoint { font-size: 0.8rem; color: var(--color-text); line-height: 1.45; margin: 0 0 0.35rem; }
+.features { font-size: 0.76rem; color: var(--color-muted); line-height: 1.45; margin: 0 0 0.35rem; }
+.warnList { list-style: none; padding: 0; margin: 0 0 0.4rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.warnItem { font-size: 0.74rem; color: #fbbf24; line-height: 1.4; padding-left: 0.9rem; position: relative; }
+.warnItem::before { content: '⚠'; position: absolute; left: 0; }
+.reviewNote { font-size: 0.72rem; color: var(--color-muted); font-style: italic; margin: 0 0 0.6rem; }

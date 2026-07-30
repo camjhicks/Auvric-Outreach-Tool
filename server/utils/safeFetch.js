@@ -33,7 +33,8 @@ export async function safeFetch(url, { timeoutMs = 10_000, headers = {} } = {}) 
     const location = response.headers.get('location')
     const isRedirect = response.status >= 300 && response.status < 400 && location
     if (!isRedirect) {
-      return { response, finalUrl: currentUrl }
+      // `redirects` is additive metadata (existing callers destructure response/finalUrl).
+      return { response, finalUrl: currentUrl, redirects }
     }
 
     if (redirects >= MAX_REDIRECTS) {

@@ -3,7 +3,7 @@ import { extractInternalLinks } from './extractInternalLinks.js'
 import { safeFetch } from './safeFetch.js'
 
 const PAGE_TIMEOUT_MS = 8_000
-const MAX_EXTRA_PAGES = 5
+const MAX_EXTRA_PAGES = 6 // strict crawl limit — homepage + up to 6 conversion-relevant pages
 const USER_AGENT = 'Mozilla/5.0 (compatible; AuvricScout/1.0)'
 
 async function fetchPage(url) {
@@ -21,12 +21,16 @@ async function fetchPage(url) {
 }
 
 /**
- * Fetches the homepage HTML plus up to MAX_EXTRA_PAGES contact-adjacent pages,
- * deduplicates all found emails, and returns them with a list of pages checked.
+ * Fetches the homepage HTML plus up to MAX_EXTRA_PAGES conversion-relevant pages
+ * (contact / booking / quote / service-request / services), deduplicates all found
+ * emails, and reports which pages were attempted vs. successfully loaded so callers
+ * can honestly describe coverage (and never claim full-site coverage).
  *
  * @param {string} baseUrl   Final URL of the homepage (after redirects)
  * @param {string} baseHtml  Already-fetched HTML of the homepage
- * @returns {{ emails: string[], pagesChecked: string[] }}
+ * @returns {{ emails: string[], pagesChecked: string[], pages: {url,html}[],
+ *            pagesAttempted: number, pagesLoaded: number, pagesFailed: number,
+ *            extraAttempted: number }}
  */
 export async function crawlContactPages(baseUrl, baseHtml) {
   const emailSet = new Set(extractEmails(baseHtml))
@@ -36,21 +40,35 @@ export async function crawlContactPages(baseUrl, baseHtml) {
 
   const candidates = extractInternalLinks(baseHtml, baseUrl).slice(0, MAX_EXTRA_PAGES)
   if (candidates.length === 0) {
-    return { emails: [...emailSet], pagesChecked, pages }
+    return {
+      emails: [...emailSet], pagesChecked, pages,
+      pagesAttempted: 1, pagesLoaded: 1, pagesFailed: 0, extraAttempted: 0,
+    }
   }
 
   const results = await Promise.allSettled(candidates.map(url => fetchPage(url)))
 
+  let extraLoaded = 0
+  let extraFailed = 0
   for (let i = 0; i < candidates.length; i++) {
     const result = results[i]
     if (result.status === 'fulfilled' && result.value) {
       pagesChecked.push(candidates[i])
       pages.push({ url: candidates[i], html: result.value })
-      for (const email of extractEmails(result.value)) {
-        emailSet.add(email)
-      }
+      extraLoaded++
+      for (const email of extractEmails(result.value)) emailSet.add(email)
+    } else {
+      extraFailed++
     }
   }
 
-  return { emails: [...emailSet], pagesChecked, pages }
+  return {
+    emails: [...emailSet],
+    pagesChecked,
+    pages,
+    pagesAttempted: 1 + candidates.length,
+    pagesLoaded: 1 + extraLoaded,
+    pagesFailed: extraFailed,
+    extraAttempted: candidates.length,
+  }
 }

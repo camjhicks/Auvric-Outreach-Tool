@@ -14,7 +14,7 @@ router.post('/', async (req, res) => {
 
   const result = await auditWebsite(url)
 
-  // Map service shape → existing frontend shape (backwards-compatible)
+  // Map service shape → existing frontend shape (backwards-compatible + 15B3 fields)
   return res.json({
     url: result.normalizedUrl,
     businessName,
@@ -28,6 +28,16 @@ router.post('/', async (req, res) => {
     leadPriority: result.leadPriority,
     scoreBreakdown: result.scoreBreakdown,
     evidence: result.evidence,
+    // 15B3: site health + structured audit notes (compact; no raw HTML)
+    siteHealth: result.siteHealth,
+    auditSummary: result.auditSummary,
+    auditStrengths: result.auditStrengths,
+    auditWeaknesses: result.auditWeaknesses,
+    auditLimitations: result.auditLimitations,
+    pagesCheckedSummary: result.pagesCheckedSummary,
+    primaryAuditFinding: result.primaryAuditFinding,
+    primaryBookingFinding: result.primaryBookingFinding,
+    recommendedOutreachAngle: result.recommendedOutreachAngle,
   })
 })
 

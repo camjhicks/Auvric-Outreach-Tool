@@ -578,6 +578,114 @@ for no-website leads · Call Queue · Email Queue · automatic lead routing · o
 tracking · the final Auvric Digital visual redesign (private welcome experience, executive
 dashboard, branding from `auvricdigital.live`).
 
+## Audit accuracy & outreach email reliability (Milestone 15B3)
+
+**Audit coverage model.** The crawler fetches the homepage plus up to 6 conversion-
+relevant internal pages (contact / book / schedule / quote / estimate / service-request /
+services), discovered by BOTH the link URL and the anchor's visible label (so "Book Now"
+is found even at a `/p/123` URL), staying on the same host and re-validating every fetch
+through the SSRF guard. It records `pagesAttempted` / `pagesLoaded` / `pagesFailed` and
+never claims full-site coverage. The full parsed document is analyzed — including content
+near the **bottom and footer** — so a form or contact section low on the page is detected.
+
+**Site-health.** Every audit produces a normalized `siteHealth` result:
+`siteAvailabilityStatus` ∈ `working` · `partially_working` · `redirected` · `unavailable` ·
+`timed_out` · `blocked` · `invalid_url` · `unable_to_verify`, plus `httpStatus`,
+`redirectCount`, `pagesAttempted/Loaded/Failed`, `timeoutDetected`, `accessBlocked`,
+`sslOrProtocolIssue`, short `siteHealthNotes`, and `siteHealthConfidence`. A site that
+does not load **still produces a full result with notes** and never disappears; a
+**blocked** site is explained as *incomplete*, never labelled broken.
+
+**Contact information vs. contact section vs. contact form** are kept distinct (never a
+false equivalence):
+- *Contact information* = a phone, email, address, or social link (a phone in the footer
+  counts).
+- *Contact section* = a visible section/heading with contact content (`contactSectionFound`).
+- *Contact form* = a real form with input fields and a submit action
+  (`contactFormFound`, `contactFormFieldCount`) — a section is **not** reported as a form.
+- *Quote / service-request form* and *booking/scheduling system* are separate again
+  (`quoteRequestFound`, `serviceRequestFound`, `bookingOptionFound` /
+  `bookingOptionType` / `bookingProvider`). When coverage is insufficient (relevant pages
+  couldn't be checked), missing evidence is reported as **not verified**, never a flat
+  "No contact form".
+
+**Booking-path definitions.** A dedicated `bookingPath` analysis classifies the customer's
+path: `clear_booking_path` · `clear_quote_path` · `clear_service_request` · `phone_only` ·
+`email_only` · `contact_form_only` · `unclear` · `not_found` · `unable_to_verify` — with
+`primaryBookingAction`, `bookingCtaProminence`, and `bookingConfidence`. Booking is not
+limited to calendars: a roofing **quote request**, an HVAC **service-request** form, and a
+med-spa **appointment scheduler** are all valid conversion paths (niche-aware), and
+`not_found` (verified absence) is distinguished from `unable_to_verify` (insufficient
+coverage). External schedulers and embedded widgets (Calendly, Acuity, Housecall, Jobber,
+etc.) and `tel:`/`sms:` call/text buttons are recognized where technically possible.
+
+**Audit notes always exist.** Every completed audit returns `auditSummary`, a non-empty
+`auditNotes` array, `auditStrengths`, `auditWeaknesses`, `auditLimitations`,
+`pagesCheckedSummary`, `primaryAuditFinding`, `primaryBookingFinding`, and
+`recommendedOutreachAngle` — deterministically, even without AI. A working site states its
+verified strengths and limited opportunity; a broken site says so; a blocked site is
+explained as incomplete; a phone-only site is described without being called broken;
+contact-info-without-a-form is distinguished; and weaknesses are never invented to fill
+space. **Limitation:** analysis is HTML-structure-only (no browser rendering), so findings
+are phrased as technical/structural evidence and visual-design judgments are avoided.
+
+### Outreach email
+
+The generated email connects **one verified pain point** to a new Auvric Digital website.
+
+**Email structure:** (A) short, specific subject; (B) personalized opening with one
+verified observation; (C) one respectful pain point; (D) a smooth transition to a custom,
+booking-focused website; (E) a few of the most relevant proposed features; (F) offer of a
+**free custom mockup and walkthrough**, no commitment; (G) one easy closing question.
+Tone: ~90–160 words, 3–5 short paragraphs, conversational, no emojis, **no em dashes**, no
+"hope this finds you well", no guarantees, no fake stats, no "AI audit" wording.
+
+**Approved Auvric Digital website features** (only these may be referenced, and only as
+what the *proposed* site can include — never claimed as already present): a clear
+booking/quote/service-request section; prominent Call and Text actions; mobile-first
+layout; clear service sections; service-area info; space for reviews and trust proof;
+photos/project proof; certifications/guarantees/licenses *when the business has them*;
+simple forms; a clear next-step explanation; a strong primary CTA; a faster customer path;
+and custom (non-template) design.
+
+**Niche-aware language** is centralized by service family (home → service calls; property →
+quote requests/estimates; automotive → service requests/appointments; health → appointments/
+consultations; professional → consultations/case inquiries; custom → neutral terms).
+
+**Evidence safety.** The model receives only an **approved evidence payload** (business
+name, niche, city, verified rating/review count, site-health status, the verified pain
+point, booking/contact-path status, confidence, permitted features, limitations) — never
+raw HTML, full page bodies, or raw provider responses. Generated output is validated and
+**rejected/regenerated** if it contains guaranteed-revenue claims, exact-loss claims,
+invented owner names / years-in-business / local-ownership, insults, unsupported
+"missing feature" claims on a blocked audit, or invented certifications/financing/
+guarantees.
+
+**AI-assisted vs. deterministic fallback.** The route uses a valid, centrally-configured
+model (`OUTREACH_MODEL`, default `claude-opus-4-8` — the previous default was an invalid
+model id, which was the cause of the generic failure) with a bounded timeout and one
+transient retry. If Anthropic is unavailable, times out, is rate-limited, returns malformed
+output, fails safety validation, or isn't configured at all, Scout builds a **deterministic
+fallback** email from the same approved evidence following the same structure — so the user
+is **never left with no email**. The response labels its `source` (`ai` / `fallback`).
+
+**Safe error categories** are classified internally (configuration missing · authentication ·
+rate limit · provider timeout · malformed response · validation failure · server failure);
+only a sanitized category is logged, the API key is never exposed, and the user sees a
+useful message. Duplicate clicks are prevented while a request is running, the last
+successful email is preserved if a later retry fails, and the review UI shows the subject,
+body, pain point, evidence confidence, proposed features, generation source, and warnings,
+with Copy subject / Copy email / Copy full email buttons. **Nothing is ever sent
+automatically** — the user reviews and copies.
+
+**Current limitations:** HTML-only analysis (no browser rendering); booking/scheduler
+detection is signal-based and may miss deeply JS-rendered widgets; the email is a reviewed
+draft, not an automated send.
+
+**Next planned milestone:** the **Saved Leads Hub**. Later planned work (not built here):
+Business Profile Research for no-website leads · Call Queue · Email Queue · Call Follow-Up
+Emails · automatic routing · outreach outcomes · the final Auvric Digital visual redesign.
+
 ## Local setup
 
 ```bash

@@ -1,34 +1,60 @@
-export function buildOutreachPrompt({ url, businessName, industry, email }) {
-  const domain = (() => { try { return new URL(url).hostname } catch { return url } })()
-  const bizLabel = businessName || domain
+// Builds the Anthropic prompt for a grounded outreach email (Milestone 15B3).
+// The model receives ONLY the approved evidence payload — never raw HTML, full page
+// bodies, or raw provider data. The structure/tone/safety rules mirror the
+// deterministic fallback so both paths produce the same kind of email.
 
-  const contextLines = [
-    `Website: ${url}`,
-    businessName ? `Business Name: ${businessName}` : null,
-    industry ? `Industry: ${industry}` : null,
-    `Contact Email: ${email}`,
-  ].filter(Boolean).join('\n')
+import { AUVRIC_FEATURES, EMAIL_WORD_TARGET } from '../config/outreach.js'
 
-  const system = `You are a freelance web consultant writing a short, friendly cold-outreach email to a local business owner. Your tone is conversational and genuine — never salesy, never aggressive. You highlight one specific, helpful observation from their website and offer something of real value.
+export function buildOutreachPrompt(evidence) {
+  const featureList = (evidence.permittedFeatures ?? [])
+    .map(id => `- ${AUVRIC_FEATURES[id]}`).join('\n')
 
-Rules you must follow:
-- Never say anything like "You are losing customers", "I guarantee results", or "Your website is terrible".
-- Never make guarantees about traffic, leads, or revenue.
-- Do not use hype phrases like "game-changer", "skyrocket", or "dominate".
-- Keep the email short — 3 to 5 sentences max for the body.
-- Make it feel like it was written by a real person, not a marketing robot.
-- Write in first person from the consultant's perspective.
-- The subject line must be specific and curiosity-driven, not generic.
-- The CTA must be a single low-commitment ask (e.g., "Would you be open to a quick chat?").
+  const facts = {
+    businessName: evidence.businessName,
+    niche: evidence.niche ?? null,
+    city: evidence.city ?? null,
+    rating: evidence.rating ?? null,
+    reviewCount: evidence.reviewCount ?? null,
+    websiteAvailability: evidence.websiteAvailability,
+    verifiedPainPoint: evidence.primaryPainStatement,
+    bookingPathStatus: evidence.bookingPathStatus ?? null,
+    auditConfidence: evidence.auditConfidence,
+    nicheLanguage: evidence.language,
+    lowConfidence: evidence.lowConfidence,
+  }
 
-Respond with valid JSON only — no markdown fences, no extra keys. Use exactly this shape:
+  const system = `You are Cameron from Auvric Digital, writing a short, genuine cold outreach email to a local service business owner. You build custom, booking-focused websites. Your tone is warm, human, and professional — never salesy, never an "audit report".
+
+Write the email in this structure:
+1. Subject: short and specific (e.g. "Booking idea for [Business]"). No clickbait.
+2. A personalized opening that mentions the business and ONE verified observation.
+3. ONE verified pain point, worded respectfully.
+4. A smooth, natural transition into a new Auvric Digital website as the solution (do not jump abruptly to a pitch).
+5. A few of the MOST relevant proposed website features (not a long list).
+6. Offer a free custom mockup and walkthrough, no commitment to view it.
+7. End with ONE easy question.
+
+Hard rules:
+- ${EMAIL_WORD_TARGET.min}-${EMAIL_WORD_TARGET.max} words, 3-5 short paragraphs.
+- Only use the facts provided. NEVER invent reviews, ratings, certifications, guarantees, financing, licenses, years in business, or local-ownership.
+- The proposed site "can include" features; never claim the business already has something not in the facts.
+- No guarantees, no revenue/lead promises, no exact loss claims, no percentages or statistics.
+- Never insult the site ("terrible", "outdated", "you're losing customers").
+- No emojis. No em dashes. No "I hope this email finds you well". Never claim you personally used the business.
+- Never mention audits, scans, or AI.
+- If auditConfidence is low, keep the pain point tentative ("it looks like...", "I'd want to confirm").
+- Use the niche language provided for what customers do (e.g. request service, request a quote, book an appointment).
+
+Respond with valid JSON only, no markdown fences, exactly:
 {"subject": "...", "body": "...", "cta": "..."}`
 
-  const user = `Write a cold outreach email for this business:
+  const user = `Approved facts (use only these):
+${JSON.stringify(facts, null, 2)}
 
-${contextLines}
+Proposed website features you may reference (choose the most relevant few):
+${featureList}
 
-Generate a subject line, email body, and a call-to-action sentence. Remember: short, genuine, no guarantees, no hype.`
+Write the outreach email now as JSON.`
 
   return { system, user }
 }
