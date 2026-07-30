@@ -1,4 +1,5 @@
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
+import ClientOpportunitySection from './ClientOpportunitySection'
 import styles from './BulkResultCard.module.css'
 
 function getDomain(url) {
@@ -12,7 +13,7 @@ const PRIORITY_COLOR = {
   'Low Priority':    '#f87171',
 }
 
-export default function BulkResultCard({ result, opportunity, selected = false, saved = false, onSelectionChange }) {
+export default function BulkResultCard({ result, opportunity, clientOpportunity, selected = false, saved = false, onSelectionChange }) {
   const {
     normalizedUrl,
     accessError,
@@ -63,6 +64,8 @@ export default function BulkResultCard({ result, opportunity, selected = false, 
           {errorMessage ?? 'Unable to access this website right now.'}
         </p>
       )}
+
+      {clientOpportunity && <ClientOpportunitySection clientOpportunity={clientOpportunity} />}
 
       {opportunity && <WebsiteOpportunitySection opportunity={opportunity} />}
 

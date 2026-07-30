@@ -1,5 +1,6 @@
 import { getBestEmail } from '../utils/bestEmail.js'
 import { DEFAULT_OPPORTUNITY } from '../config/websiteOpportunity.js'
+import { DEFAULT_CLIENT_OPPORTUNITY } from '../config/clientOpportunity.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
@@ -12,6 +13,18 @@ function withOpportunityDefaults(obj) {
   const src = obj ?? {}
   for (const key of Object.keys(DEFAULT_OPPORTUNITY)) {
     out[key] = src[key] ?? DEFAULT_OPPORTUNITY[key]
+  }
+  return out
+}
+
+// Returns the full Client Opportunity field set (Milestone 15B2A), filling any
+// missing field with its safe default — used both when saving a computed result
+// and when lazily migrating older leads that predate the combined score.
+function withClientOpportunityDefaults(obj) {
+  const out = {}
+  const src = obj ?? {}
+  for (const key of Object.keys(DEFAULT_CLIENT_OPPORTUNITY)) {
+    out[key] = src[key] ?? DEFAULT_CLIENT_OPPORTUNITY[key]
   }
   return out
 }
@@ -95,6 +108,10 @@ function migrateLead(lead) {
     chainRiskConfidence: lead.chainRiskConfidence ?? 'unknown',
     // Website Opportunity metadata (Milestone 15B1) — safe defaults for legacy leads.
     ...withOpportunityDefaults(lead),
+    // Client Opportunity metadata (Milestone 15B2A) — safe defaults for legacy leads.
+    // Legacy leads are NOT silently recomputed here; they keep null/unknown until a
+    // fresh audit produces both component scores.
+    ...withClientOpportunityDefaults(lead),
   }
 }
 
@@ -123,6 +140,7 @@ export function saveLead({
   leadPriority,
   scoreBreakdown,
   opportunity,
+  clientOpportunity,
 }) {
   const emails = emailsFound ?? []
   const lead = {
@@ -147,6 +165,8 @@ export function saveLead({
     scoreBreakdown: scoreBreakdown ?? [],
     // Website Opportunity metadata (Milestone 15B1)
     ...withOpportunityDefaults(opportunity),
+    // Client Opportunity metadata (Milestone 15B2A)
+    ...withClientOpportunityDefaults(clientOpportunity),
   }
   const leads = [lead, ...getLeads()]
   setLeads(leads)
@@ -275,6 +295,9 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       chainRiskConfidence: meta?.chainRiskConfidence ?? 'unknown',
       // Website Opportunity metadata (from the audited result, not discovery)
       ...withOpportunityDefaults(result.opportunity),
+      // Client Opportunity metadata (Milestone 15B2A) — combined from the audited
+      // result + discovery metadata by the caller; safe defaults otherwise.
+      ...withClientOpportunityDefaults(result.clientOpportunity),
     })
     savedCount++
   }

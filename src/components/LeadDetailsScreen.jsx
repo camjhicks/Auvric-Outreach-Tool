@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import LeadOutreachEditor from './LeadOutreachEditor'
 import ConfirmModal from './ConfirmModal'
+import ClientOpportunitySection from './ClientOpportunitySection'
+import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import styles from './LeadDetailsScreen.module.css'
 
 function getDomain(url) {
@@ -111,6 +113,19 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
               <InfoRow label="Source">
                 {SOURCE_LABEL[lead.discoverySource] ?? lead.discoverySource}
               </InfoRow>
+            )}
+          </Section>
+        )}
+
+        {(lead.clientOpportunityStatus || lead.websiteOpportunityStatus) && (
+          <Section title="Prioritization">
+            {/* The lead stores the flat combined + website fields; pass it directly.
+                Discovery Qualification and Website Opportunity stay separately visible. */}
+            {lead.clientOpportunityStatus && (
+              <ClientOpportunitySection clientOpportunity={lead} />
+            )}
+            {lead.websiteOpportunityStatus && (
+              <WebsiteOpportunitySection opportunity={lead} />
             )}
           </Section>
         )}

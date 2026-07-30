@@ -3,6 +3,7 @@ import { runBulkAudit } from '../services/bulkAuditApi'
 import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { computeWebsiteOpportunity } from '../utils/websiteOpportunity'
+import { computeClientOpportunity } from '../utils/clientOpportunity'
 import { downloadBulkAuditCSV } from '../utils/exportBulkAuditCsv'
 import BulkResultCard from './BulkResultCard'
 import styles from './BulkAuditScreen.module.css'
@@ -70,14 +71,24 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
     return m
   }, [discoveryBusinesses])
 
-  // Attach a deterministic Website Opportunity result to each audit result,
-  // niche-aware via the matching discovery record's service family.
+  // Attach the deterministic Website Opportunity result (niche-aware via the matching
+  // discovery record) and then the combined Client Opportunity result (discovery +
+  // website) to each audit result. Neither component score is altered here.
   const enrichedResults = useMemo(() => {
     if (!results) return null
     return results.map(r => {
       const meta = discoveryByUrl.get(normalizeLeadUrl(r.requestedUrl ?? r.normalizedUrl))
       const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: meta?.serviceFamily ?? null })
-      return { ...r, opportunity }
+      // Flat input: discovery metadata (qualification + business fields) merged with
+      // the website-opportunity result. Manual URLs (no meta) → website-only provisional.
+      const clientOpportunity = computeClientOpportunity({
+        ...(meta ?? {}),
+        ...opportunity,
+        businessName: (typeof r.businessName === 'string' && r.businessName.trim()) || meta?.businessName || null,
+        hasWebsite: meta ? (meta.hasWebsite ?? true) : true,
+        normalizedUrl: r.normalizedUrl,
+      })
+      return { ...r, opportunity, clientOpportunity }
     })
   }, [results, discoveryByUrl])
 
@@ -236,6 +247,7 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, ini
                   key={result.normalizedUrl}
                   result={result}
                   opportunity={result.opportunity}
+                  clientOpportunity={result.clientOpportunity}
                   selected={selected.has(normUrl)}
                   saved={savedUrls.has(normUrl)}
                   onSelectionChange={handleToggle}

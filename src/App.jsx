@@ -10,6 +10,7 @@ import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
 import { computeWebsiteOpportunity } from './utils/websiteOpportunity'
+import { computeClientOpportunity } from './utils/clientOpportunity'
 import { getBestEmail } from './utils/bestEmail'
 import { isFollowUpDue } from './utils/followUp'
 import {
@@ -55,7 +56,15 @@ export default function App() {
       const data = await runAudit(fields)
       // Deterministic website-opportunity analysis (no niche for a single audit).
       const opportunity = computeWebsiteOpportunity(data.evidence, { serviceFamily: null })
-      setAuditResult({ ...data, opportunity })
+      // A manual single audit has no discovery metadata → website-only provisional
+      // Client Opportunity (or Unable, if the audit was blocked).
+      const clientOpportunity = computeClientOpportunity({
+        ...opportunity,
+        businessName: data.businessName ?? null,
+        hasWebsite: true,
+        normalizedUrl: data.url,
+      })
+      setAuditResult({ ...data, opportunity, clientOpportunity })
       if (!data.accessError) {
         const n = incrementLeadsGenerated()
         setLeadsGenerated(n)
@@ -82,6 +91,7 @@ export default function App() {
       leadPriority: auditResult.leadPriority ?? null,
       scoreBreakdown: auditResult.scoreBreakdown ?? [],
       opportunity: auditResult.opportunity ?? null,
+      clientOpportunity: auditResult.clientOpportunity ?? null,
     })
     setLeads(updated)
   }
@@ -207,6 +217,7 @@ export default function App() {
           outreachDraft={outreachDraft}
           outreachError={outreachError}
           opportunity={auditResult?.opportunity}
+          clientOpportunity={auditResult?.clientOpportunity}
         />
       </main>
     </div>

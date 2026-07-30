@@ -376,8 +376,122 @@ and older saved leads are migrated lazily — existing audit/discovery data is n
 overwritten with empty values.
 
 **Reminder:** the Website Opportunity Score and the Discovery Qualification Score are
-**kept separate on purpose.** **Next:** Milestone 15B2 — combined Client Opportunity
-Score and outreach openers.
+**kept separate on purpose.** They are *combined* — not replaced — by the Client
+Opportunity Score below.
+
+## Client Opportunity Score (deterministic — Milestone 15B2A)
+
+Scout now has **three** deterministic (no-AI) scoring layers, and all three stay
+separately visible:
+
+1. **Discovery Qualification Score** — "Is this business worth investigating?" (from
+   Google metadata, before any audit).
+2. **Website Opportunity Score** — "How much verified opportunity exists to improve this
+   website's ability to generate calls, quotes, appointments, or bookings?" (from the
+   audited pages).
+3. **Client Opportunity Score** — "Based on verified discovery *and* website evidence,
+   how strongly should Auvric prioritize contacting this audited business vs. others?"
+
+The Client Opportunity Score **combines the two existing bounded scores** — it does not
+re-run either engine, and adds **no** second LinkNow, generic-template, or high-ticket
+niche bonus (those already live inside the component scores). Same inputs → same result.
+
+**Explicit warning:** this score is a **prioritization** signal, **not** a guarantee of a
+sale. It never claims the business will purchase, has a budget, is dissatisfied, is
+locally owned (unless verified), or that an inaccessible website is strong or weak.
+Unknown information is never treated as negative evidence. **Outreach outcomes are not
+yet part of the score** (no learning loop yet).
+
+**Formula (complete case):**
+
+```
+clientOpportunityScore = round( qualificationScore × 0.45 + websiteOpportunityScore × 0.55 )
+```
+
+clamped to 0–100. Weights sum to 100% (website weighted higher — Auvric sells
+website/booking improvement). Contributions are summed at full precision and the **total**
+is rounded once, so the transparent breakdown reconciles exactly with the final score.
+All constants live in one module (`src/config/clientOpportunity.js`); the engine is
+`src/utils/clientOpportunity.js`.
+
+**Tier thresholds** (from the final score, before caps): **Call First ≥80 · High
+Priority ≥65 · Qualified ≥50 · Review Manually ≥35 · Low Priority <35**, plus
+**Disqualified** and **Incomplete** which come from status, not score.
+
+**Evidence-confidence overrides** (explicit — never hidden score changes). Client
+confidence is the *lower* of the two component confidences when both are present, or the
+single component's confidence reduced one level when only one is. The confidence then
+**caps the tier**:
+- **low / unknown** confidence → cannot exceed **Review Manually** (so a high number with
+  weak evidence cannot become Call First).
+- **medium** → cannot be **Call First** (max High Priority).
+- **high** → no cap.
+
+(e.g. score 86 + high → Call First; 86 + low → Review Manually; 74 + medium → High Priority.)
+
+**Score completeness** describes *available evidence only* (not close probability):
+`complete` (both scores), `partial` (one score), `limited` (no scores but the record has
+identity), `unknown` (nothing). It also reports `discoveryScoreAvailable`,
+`websiteScoreAvailable`, `bookingEvidenceAvailable`, the two component confidences, and a
+`missingComponents` list.
+
+**Missing-component behavior:**
+- **Discovery + successful audit →** `complete`; both scores combined normally.
+- **Website present but audit blocked/failed →** `needs_audit` (provisional). *Unable to
+  Evaluate is never treated as zero.* Score falls back to the discovery score, tier is
+  capped below Call First, action = **Retry website audit**.
+- **Manual URL audit (no discovery) →** `provisional_website_only`. Retains the website
+  score, does not pretend demand was verified, caps the tier at **Qualified** (no Call
+  First / High Priority), action = **Research business manually**.
+- **No website →** `no_website`, score `null`, retained (not disqualified) for the future
+  no-website workflow, action = **Keep for no-website workflow**.
+- **Missing both →** `unable_to_evaluate`, score `null` (never fabricated).
+
+**Override rules** (a disqualifying condition always beats the numeric score):
+Discovery **Disqualified** → Client **Disqualified**; **permanently closed** →
+Disqualified / Do not contact; **high-confidence recognized chain** → Disqualified
+(medium chain risk is retained for manual review); **temporarily closed** → tier capped
+at Review Manually with a warning.
+
+**Recommended actions:** Call first · Add to priority outreach · Review website evidence ·
+Retry website audit · Research business manually · Keep for no-website workflow · Do not
+contact · Insufficient evidence.
+
+**Transparent breakdown.** Each entry carries `componentId`, `label`, `rawScore`,
+`weight`, `weightedImpact`, `evidence`, `confidence`, `sourceScore`, and `ruleId`. It
+shows the Discovery contribution, the Website contribution, and any explicit
+confidence/status/override adjustment — and it **reconciles** with the score. The
+lower-level Discovery and Website Opportunity breakdowns remain separately available;
+inputs are never mutated.
+
+**Priority ranking** (`rankAuditedLeads`) orders audited leads deterministically by:
+client tier → client score (desc, nulls last) → client evidence confidence →
+qualification score (desc) → website opportunity score (desc) → review count (desc) →
+business name (A–Z) → original order. **Disqualified sorts last**; null/provisional
+scores sort predictably. `clientPriorityRank` is **computed dynamically** within the
+current collection (not persisted — a stored global rank would go stale).
+
+**Integration & persistence.** The combined result is attached to discovery-originated
+bulk audits, single/manual audits, and saved leads, **without altering either component
+score** and preserving all niche, Google Places, qualification, audit, booking, LinkNow,
+and generic-template metadata. Manual URLs get website-only provisional results;
+no-website records stay safe and uncombined. Old saved leads migrate with safe defaults
+and are **not** silently recomputed when evidence is incomplete. Only normalized compact
+data is stored — never raw HTML or raw provider responses.
+
+**Minimal UI.** Successful audit cards and Saved Lead details show the Client Opportunity
+score, tier, primary reason, recommended action, evidence confidence, and completeness,
+with an expandable **"Why prioritize this lead?"** (Discovery contribution, Website
+contribution, supporting reasons, warnings, and any provisional/override explanation).
+Discovery Qualification and Website Opportunity remain separately visible; provisional and
+incomplete results are clearly labeled.
+
+**Current limitations:** the score prioritizes outreach effort only — it does not predict
+sales or revenue; the no-website workflow and the personalized cold-call opener are not
+built yet; outreach-outcome learning is not included.
+
+**Next:** **Milestone 15B2B** — Personalized Sales Reasoning and Cold-Call Opener.
+**Planned later:** **Milestone 15C** — Call List system.
 
 ## Local setup
 
