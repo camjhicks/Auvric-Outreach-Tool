@@ -490,8 +490,95 @@ incomplete results are clearly labeled.
 sales or revenue; the no-website workflow and the personalized cold-call opener are not
 built yet; outreach-outcome learning is not included.
 
-**Next:** **Milestone 15B2B** — Personalized Sales Reasoning and Cold-Call Opener.
-**Planned later:** **Milestone 15C** — Call List system.
+**Next:** the Sales Reasoning layer below turns these scores into human-outreach guidance.
+
+## Sales Reasoning & Cold-Call Opener (deterministic — Milestone 15B2B)
+
+The Sales Reasoning layer converts already-**verified** evidence (discovery,
+qualification, audit, booking, website-opportunity, and client-opportunity) into
+practical guidance a human uses to make a call: *why* to contact the lead, the
+*verified pain point*, a *value proposition*, a natural *cold-call opener*, a
+*follow-up question*, and a safe *next step*.
+
+**Deterministic, not AI.** This layer is 100% rule-based (`src/config/salesReasoning.js`
++ `src/utils/salesReasoning.js`) — the same normalized lead always produces the same
+guidance. It is separate from the optional Anthropic-generated outreach *draft* feature,
+which still exists independently. **All guidance is a starting point that a human must
+review before calling** — the UI says so explicitly.
+
+**It never claims** the owner is unhappy, that the business loses a specific amount,
+that it will buy, that Auvric guarantees bookings/results, that the company is locally
+owned, that a feature is missing when the audit couldn't verify it, that an owner name or
+years-in-business is known, or that a site is "outdated" from a visual assumption. A
+centralized **forbidden-claims validator** guards every generated line as a final check.
+
+**Supported sales angles:** booking friction · weak contact flow · no clear quote
+request · no scheduling · phone-only booking · managed-template (LinkNow) opportunity ·
+generic-template opportunity · strong demand + weak conversion · weak review visibility ·
+weak trust presentation · weak service clarity · weak mobile/technical signals · no
+website · website audit blocked · insufficient evidence. Scout selects the **strongest
+one or two verified angles** (never all at once).
+
+**Angle priority** (deterministic): severe/high booking friction → broken/weak contact
+path → missing quote/scheduling path → high-confidence LinkNow/generic template → strong
+demand + weak conversion → weak review/trust → service clarity → mobile/technical → no
+website → blocked audit → insufficient. The secondary angle is the next applicable one
+with a *different* value proposition.
+
+**Cold-call opener** structure: quick context → one verified observation → one genuine
+discovery question, kept to ~35 words, conversational, no jargon. It never says "your
+website is bad", never promises revenue, never names LinkNow (that only appears —
+neutrally — in the evidence when confidence is high), and never asserts a missing feature
+the audit couldn't verify. When evidence is weak or the audit was blocked, the opener
+falls back to a **general booking-process question** instead of a specific claim.
+
+**Niche-aware language** is centralized by service family (home services → "service calls
+/ estimates"; property services → "project inquiries / quote-request"; automotive →
+"service requests"; health & aesthetics → "appointments / consultations"; professional
+services → "case inquiries / consultations"). Custom/unknown niches use neutral terms
+(customers, inquiries, bookings). No giant per-niche scripts — one reusable structure.
+
+**Evidence-safety rules:** review count/rating are cited only when verified; LinkNow is
+named only at high confidence; a missing feature is only asserted when enough pages were
+checked (homepage-only coverage adds a caution and softens the wording); mobile issues
+are described as *technical indicators*, not browser-verified visual problems; owner
+name, years in business, and local ownership are never invented.
+
+**Manual review** is required (and clearly flagged in the UI) when the audit was blocked,
+evidence confidence is low/unknown, medium chain risk exists, the business is temporarily
+closed, the angle relies on limited page coverage, or the primary issue is inference-heavy
+(e.g. mobile/technical). In those cases Scout does **not** produce a confident pitch — it
+returns a cautious general opener plus warnings. Statuses: `ready` · `ready_with_caution` ·
+`manual_review_required` · `needs_audit` · `no_website` · `disqualified` ·
+`insufficient_evidence`.
+
+**Value proposition & CTA** match the pain point and the Client Opportunity status:
+booking/trust/template/no-website value props; the recommended next step ranges from
+*Offer a free custom demo* (strong, complete, confident leads) through *Offer a short
+walkthrough* / *Ask to review a mockup*, to *Retry the website audit* (blocked),
+*Research manually* (no-website/insufficient), and *Do not contact* (disqualified).
+
+**Normalized fields added (persisted):** `salesReasoningStatus`, `primarySalesAngle`,
+`secondarySalesAngle`, `whyContactThisLead`, `verifiedPainPoint`, `valueProposition`,
+`suggestedColdCallOpener`, `suggestedFollowUpQuestion`, `suggestedCallToAction`,
+`salesEvidence`, `salesWarnings`, `manualReviewRequired`, `salesEvidenceConfidence`.
+
+**UI & copy behavior.** A compact **Sales Approach** section appears on audit result
+cards, bulk cards, and Saved Lead details — showing the angle, why-to-contact, and a
+caution when review is needed, with an expandable panel for the pain point, value prop,
+opener, follow-up, next step, evidence, and warnings. **Copy buttons** (opener, and full
+approach) put text on the clipboard **only when clicked** — nothing is ever copied
+automatically. The three score layers stay separately visible.
+
+**Persistence** stores only compact normalized fields (no raw HTML, no raw provider
+responses); old leads migrate with safe defaults (null fields, empty arrays, unknown
+confidence) and are **never** given invented reasoning without the required evidence.
+
+**Current limitations:** guidance supports human outreach only — no automatic calling,
+emails, or messages; no Call List section yet; no outreach-outcome learning. **Everything
+generated must be reviewed by a human before use.**
+
+**Next:** **Milestone 15C1** — Call List Foundation.
 
 ## Navigation & session continuity (Milestone 15B2C)
 
