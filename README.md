@@ -806,11 +806,71 @@ and Reset Workspace never deletes permanent Saved Leads.
 
 **No outreach is ever sent automatically** — every email is a reviewed, copyable draft.
 
-**Next milestone:** **15C1 — Saved Leads Hub.** Later planned work (not built here): direct
-save from Discovery · unaudited and audited Saved-Lead sections · bulk audit and bulk
-delete · Business Profile Research for no-website leads · Call Queue · Email Queue · Call
-Follow-Up Emails · automatic routing · completed call/email sections · outreach outcomes ·
-the final Auvric Digital visual redesign.
+## Saved Leads Hub & direct discovery saving (Milestone 15C1)
+
+A business no longer has to be audited before it can be saved. The Saved Leads Hub is a
+dependable CRM surface for every lead — discovered, audited, or no-website — with one
+permanent record per business.
+
+**Direct save from Discovery.** Every Discovery result card has a **Save Lead** action
+that persists the compact discovery record immediately — no audit, no email, no page
+navigation, and no lost scroll/filter/selection state. No-website businesses can be saved
+too. Saving stores only approved fields (name, place ID, niche, location, phone, website,
+business status, rating, reviews, chain risk, qualification, and discovery/save
+timestamps) — never raw Google responses or HTML. A saved card shows a **✓ Saved to
+Leads** state, and re-saving merges safe newer metadata instead of creating a duplicate.
+
+**One record per business (deterministic identity).** Leads are matched by a strict
+identity order — (1) Google Place ID, (2) website domain **+ phone**, (3) phone + name,
+(4) name + address, with the exact same website URL also treated as the same record so a
+re-audit updates in place. A shared *domain alone* is deliberately **not** a match (two
+businesses can list the same social page or directory host), which keeps distinct
+businesses separate. Saving from Discovery, auditing later, saving a Bulk Audit result, or
+reopening a lead all converge on the **same** record. Merges never drop stronger metadata
+and never overwrite a found email, verified phone, or completed score with a blank.
+
+**Sections, filters, sorting.** The hub organizes leads into **Needs Review** (saved with
+no completed audit — includes no-website and interrupted/failed attempts), **Audited** (a
+completed audit exists, even if blocked/partial), and **All Leads**, each with a live
+count; a no-website lead is never called a "failed audit," and a blocked audit *with* a
+stored result is not "unaudited." Leads can be filtered by audit / website / phone / email
+status and priority tier, searched by name/niche/city/phone/email/domain, and sorted by 15
+deterministic modes (client/qualification/website scores as 0–100, reviews, rating, newest/
+oldest, name, and audited/website/email-first orders) with stable tie-breakers. Missing
+scores always sort last. The current section, filters, search, sort, and selection persist
+through refresh and Back/Forward via the versioned session slice (never the permanent
+data).
+
+**Bulk actions.** Select individual leads, all visible, or clear; the count is always
+shown and hidden selections are pruned before any destructive action. **Audit Selected**
+sends only website-eligible leads (no-website excluded with a reason, capped at 20) into
+the existing Bulk Audit flow **without auto-starting**, preserving each lead's stable id so
+results update the original records instead of duplicating. **Delete Selected** removes
+only the chosen leads behind an explicit confirmation and clears them from the selection.
+
+**Derived status & queue-eligibility prep.** Website / audit / phone / email statuses are
+computed from the stored fields with readable, text-first labels (never color-only), and
+"email not found" always means the audited pages had none — never "no email exists." Each
+lead also carries prepared **Call Queue** and **Email Queue** eligibility flags with
+reasons (call = valid phone, not permanently closed, not disqualified, no high-confidence
+national chain; email = verified email, not permanently closed, not disqualified). These
+are shown on the detail screen for transparency — **the queues themselves are not built
+here**, and no queue actions are rendered.
+
+**Detail screen.** A lead's detail view adds a **Lead Status** section (website, audit,
+phone, email, and both queue-eligibility reasons); no-website leads read *"Website Audit
+not applicable — Business Profile Research planned."*
+
+**Persistence & migration.** New timestamps (`savedAt`, `updatedAt`, `auditedAt`,
+`lastAuditAttemptAt`) and a normalized `auditStatus` are stored on every lead. Legacy leads
+migrate lazily with safe defaults — nothing is recomputed or fabricated, `auditStatus`/
+`auditedAt` stay null until a real audit, and stronger values are never overwritten with
+blanks. Reset Workspace still preserves all Saved Leads.
+
+**Next milestone:** **15C2 — Business Profile Research** (for no-website leads). Later
+planned work (not built here): Call Queue · Email Queue · Call Follow-Up Emails · automatic
+routing · completed call/email sections · outreach outcomes · the final Auvric Digital
+visual redesign.
 
 ## Local setup
 

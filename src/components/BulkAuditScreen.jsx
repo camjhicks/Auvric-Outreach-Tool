@@ -161,16 +161,15 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
   function handleSaveSelected() {
     if (selected.size === 0 || !enrichedResults) return
     const selectedResults = enrichedResults.filter(r => selected.has(normalizeLeadUrl(r.normalizedUrl)))
-    const { savedCount, skippedCount, leads: updatedLeads } = saveBulkLeads(selectedResults, discoveryByUrl)
+    const { savedCount, updatedCount, leads: updatedLeads } = saveBulkLeads(selectedResults, discoveryByUrl)
     onLeadsChange(updatedLeads)
     setSelected(new Set())
-    if (skippedCount === 0) {
-      setSaveMessage(`${savedCount} lead${savedCount !== 1 ? 's' : ''} saved successfully.`)
-    } else if (savedCount === 0) {
-      setSaveMessage(`0 leads saved — ${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped.`)
-    } else {
-      setSaveMessage(`${savedCount} lead${savedCount !== 1 ? 's' : ''} saved. ${skippedCount} duplicate${skippedCount !== 1 ? 's' : ''} skipped.`)
-    }
+    // Upsert model (Milestone 15C1): a result that matches an already-saved business
+    // UPDATES that record (no duplicate) instead of being skipped.
+    const parts = []
+    if (savedCount > 0) parts.push(`${savedCount} lead${savedCount !== 1 ? 's' : ''} saved`)
+    if (updatedCount > 0) parts.push(`${updatedCount} existing lead${updatedCount !== 1 ? 's' : ''} updated`)
+    setSaveMessage(parts.length ? `${parts.join(' · ')}.` : 'No changes.')
   }
 
   return (

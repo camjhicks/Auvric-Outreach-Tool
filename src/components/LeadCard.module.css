@@ -3,6 +3,46 @@
   border: 1px solid var(--color-border);
   border-radius: 10px;
   overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.cardSelected {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.selectBox {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Derived status chips (text-first, never color-only) */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.15rem 0;
+}
+
+.chip {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.chipPos {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.chipMuted {
+  color: var(--color-muted);
 }
 
 /* Top */
@@ -129,7 +169,8 @@
 
 .detailsBtn,
 .contactBtn,
-.deleteBtn {
+.deleteBtn,
+.auditBtn {
   font-size: 0.775rem;
   font-weight: 600;
   padding: 0.35rem 0.65rem;
@@ -137,6 +178,15 @@
   border: none;
   transition: background 0.15s;
   white-space: nowrap;
+}
+
+.auditBtn {
+  background: #14261c;
+  color: #4ade80;
+}
+
+.auditBtn:hover {
+  background: #1a3325;
 }
 
 .detailsBtn {

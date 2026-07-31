@@ -5,6 +5,7 @@ import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
 import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config/niches'
 import { qualifyBusiness } from '../utils/qualification'
 import { dedupeAndValidate } from '../utils/discoveryDedup'
+import { identityKey } from '../utils/leadIdentity'
 import {
   DEFAULT_FILTERS, applyFilters, sortBusinesses, pruneSelection, computeSummary,
   isAuditEligible, summarizeActiveCriteria,
@@ -26,7 +27,19 @@ const ENABLED_NICHES = getEnabledNiches()
 // Filter keys that, when changed from their permissive default, count as "active".
 const ACTIVE_FILTER_KEYS = ['reviewPreset', 'ratingPreset', 'websiteStatus', 'phoneStatus', 'tierFilter', 'excludeChains', 'excludeTempClosed']
 
-export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
+// Map a discovery card business to the lead-shaped fields used for identity, so a
+// card can show whether that business is already in Saved Leads (reactively).
+function businessIdentityShape(b) {
+  return {
+    googlePlaceId: b.providerId ?? null,
+    websiteUrl: b.normalizedUrl ?? b.websiteUrl ?? '',
+    phone: b.phoneNumber ?? null,
+    businessName: b.businessName ?? null,
+    address: b.formattedAddress ?? null,
+  }
+}
+
+export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], onSaveDiscovery }) {
   // Restore transient Discovery working state from the session slice (Milestone
   // 15B2C). A refresh or tab-return keeps the search inputs, the already-returned
   // normalized results, filters, sorting, and eligible selection — WITHOUT re-running
@@ -193,6 +206,21 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
   // Reset only the result filters/sort — never the niche, location, or results.
   function handleResetFilters() {
     setFilters(DEFAULT_FILTERS)
+  }
+
+  // Identity keys of every currently Saved Lead — lets each card reflect a saved
+  // state instantly after a direct save, without a storage re-read.
+  const savedIdentityKeys = useMemo(
+    () => new Set((leads ?? []).map(l => identityKey(l)).filter(Boolean)),
+    [leads]
+  )
+
+  // Direct save from Discovery (Milestone 15C1) — persist the compact discovery record
+  // WITHOUT auditing and WITHOUT navigating away. No-website businesses save too.
+  function handleSaveBusiness(business) {
+    if (!onSaveDiscovery) return
+    const payload = toDiscoveryBusiness(business, result?.niche, { allowNoWebsite: true })
+    if (payload) onSaveDiscovery(payload)
   }
 
   function handleAuditSelected() {
@@ -441,6 +469,8 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk }) {
                     selected={selected.has(b.providerId)}
                     selectable={isSelectable(b)}
                     onToggle={handleToggle}
+                    saved={savedIdentityKeys.has(identityKey(businessIdentityShape(b)))}
+                    onSave={onSaveDiscovery ? handleSaveBusiness : undefined}
                   />
                 ))}
               </div>

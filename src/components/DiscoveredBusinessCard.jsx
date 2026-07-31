@@ -40,6 +40,8 @@ export default function DiscoveredBusinessCard({
   selected,
   selectable,
   onToggle,
+  saved = false,
+  onSave,
 }) {
   const {
     providerId,
@@ -185,6 +187,20 @@ export default function DiscoveredBusinessCard({
           </a>
         )}
       </div>
+
+      {onSave && (
+        <div className={styles.saveRow}>
+          <button
+            type="button"
+            className={`${styles.saveBtn} ${saved ? styles.saveBtnSaved : ''}`}
+            onClick={() => onSave(business)}
+            disabled={saved}
+            aria-label={saved ? `${businessName || 'Business'} saved to leads` : `Save ${businessName || 'business'} to leads`}
+          >
+            {saved ? '✓ Saved to Leads' : '☆ Save Lead'}
+          </button>
+        </div>
+      )}
     </article>
   )
 }

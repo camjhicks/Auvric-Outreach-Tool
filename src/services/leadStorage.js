@@ -2,9 +2,20 @@ import { getBestEmail } from '../utils/bestEmail.js'
 import { DEFAULT_OPPORTUNITY } from '../config/websiteOpportunity.js'
 import { DEFAULT_CLIENT_OPPORTUNITY } from '../config/clientOpportunity.js'
 import { DEFAULT_SALES_REASONING } from '../config/salesReasoning.js'
+import { findMatch, mergeLeadRecords } from '../utils/leadIdentity.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
+
+// Derive a normalized audit status from a completed audit result (Milestone 15C1).
+function deriveAuditStatus(result) {
+  if (!result) return 'not_audited'
+  const s = result.siteHealth?.siteAvailabilityStatus ?? null
+  if (result.accessError || s === 'blocked') return 'audit_blocked'
+  if (s === 'unavailable' || s === 'timed_out' || s === 'invalid_url') return 'audit_failed'
+  if (s === 'partially_working') return 'partially_audited'
+  return 'audited'
+}
 
 // Returns the full website-opportunity field set, filling any missing field with
 // its safe default. Used for saving (from an opportunity result) and for lazy
@@ -75,6 +86,14 @@ function migrateLead(lead) {
     businessName: lead.businessName ?? null,
     industry: lead.industry ?? null,
     dateSaved: lead.dateSaved ?? new Date().toISOString(),
+    // 15C1 timestamps + audit/site status (safe defaults for legacy leads).
+    savedAt: lead.savedAt ?? lead.dateSaved ?? new Date().toISOString(),
+    updatedAt: lead.updatedAt ?? lead.dateSaved ?? null,
+    dateDiscovered: lead.dateDiscovered ?? null,
+    auditedAt: lead.auditedAt ?? null,
+    lastAuditAttemptAt: lead.lastAuditAttemptAt ?? null,
+    auditStatus: lead.auditStatus ?? null,
+    siteAvailabilityStatus: lead.siteAvailabilityStatus ?? null,
     emailsFound: lead.emailsFound ?? [],
     bestEmail: lead.bestEmail ?? getBestEmail(lead.emailsFound ?? []),
     auditNotes: lead.auditNotes ?? null,
@@ -158,14 +177,23 @@ export function saveLead({
   opportunity,
   clientOpportunity,
   salesReasoning,
+  siteHealth,
 }) {
   const emails = emailsFound ?? []
-  const lead = {
+  const now = new Date().toISOString()
+  const auditStatus = deriveAuditStatus({ siteHealth })
+  const newLead = {
     id: crypto.randomUUID(),
     websiteUrl,
     businessName: businessName ?? null,
     industry: industry ?? null,
-    dateSaved: new Date().toISOString(),
+    dateSaved: now,
+    savedAt: now,
+    updatedAt: now,
+    auditedAt: now,
+    lastAuditAttemptAt: now,
+    auditStatus,
+    siteAvailabilityStatus: siteHealth?.siteAvailabilityStatus ?? null,
     emailsFound: emails,
     bestEmail: getBestEmail(emails),
     auditNotes: auditNotes ?? null,
@@ -187,7 +215,18 @@ export function saveLead({
     // Sales Reasoning metadata (Milestone 15B2B)
     ...withSalesReasoningDefaults(salesReasoning),
   }
-  const leads = [lead, ...getLeads()]
+  // Upsert: if this business is already saved, update it in place (no duplicate).
+  const existing = getLeads()
+  const match = findMatch(newLead, existing)
+  let lead, leads
+  if (match) {
+    const { id, savedAt, dateSaved, dateDiscovered, ...incoming } = newLead
+    lead = mergeLeadRecords(match, incoming)
+    leads = existing.map(l => (l.id === match.id ? lead : l))
+  } else {
+    lead = newLead
+    leads = [lead, ...existing]
+  }
   setLeads(leads)
   return { lead, leads }
 }
@@ -222,85 +261,155 @@ export function deleteLead(id) {
   return leads
 }
 
+// Bulk delete (Milestone 15C1). Removes only the given ids; unrelated leads untouched.
+export function deleteLeads(ids) {
+  const remove = new Set(Array.isArray(ids) ? ids : [])
+  if (remove.size === 0) return { deletedCount: 0, leads: getLeads() }
+  const before = getLeads()
+  const leads = before.filter(l => !remove.has(l.id))
+  setLeads(leads)
+  return { deletedCount: before.length - leads.length, leads }
+}
+
+/**
+ * Direct save from Lead Discovery (Milestone 15C1) — save a promising business
+ * immediately WITHOUT auditing. Stores only the compact, approved discovery record
+ * (never raw provider responses). Upserts by identity: a repeat save updates safe
+ * newer metadata instead of creating a duplicate. Returns { lead, leads, wasUpdate }.
+ */
+export function saveDiscoveryLead(business) {
+  const b = business ?? {}
+  const now = new Date().toISOString()
+  const websiteUrl = b.websiteUrl ?? ''
+  const hasWebsite = b.hasWebsite ?? Boolean(websiteUrl)
+  const record = {
+    id: crypto.randomUUID(),
+    websiteUrl,
+    businessName: typeof b.businessName === 'string' ? b.businessName : (b.businessName ?? null),
+    industry: b.industry ?? null,
+    dateSaved: now, savedAt: now, updatedAt: now,
+    dateDiscovered: b.dateDiscovered ?? now,
+    auditedAt: null, lastAuditAttemptAt: null,
+    // Not audited yet — a save is not an audit.
+    auditStatus: hasWebsite ? 'not_audited' : 'not_applicable_no_website',
+    siteAvailabilityStatus: null,
+    emailsFound: [], bestEmail: null, auditNotes: null, pagesChecked: [],
+    outreachDraft: null, outreachSubject: null, outreachCTA: null,
+    status: 'New', notes: '', lastContactedAt: null, nextFollowUpAt: null, followUpCount: 0,
+    leadScore: null, leadPriority: null, scoreBreakdown: [],
+    // Discovery / Google Places metadata (approved for persistence)
+    phone: b.phone ?? null,
+    address: b.address ?? null,
+    rating: typeof b.rating === 'number' ? b.rating : null,
+    reviewCount: typeof b.reviewCount === 'number' ? b.reviewCount : null,
+    googlePlaceId: b.googlePlaceId ?? null,
+    primaryType: b.primaryType ?? null,
+    businessStatus: b.businessStatus ?? null,
+    discoverySource: b.discoverySource ?? 'google_places',
+    // Niche metadata
+    selectedNicheId: b.selectedNicheId ?? null,
+    selectedNicheLabel: b.selectedNicheLabel ?? null,
+    selectedNicheSearchPhrase: b.selectedNicheSearchPhrase ?? null,
+    serviceFamily: b.serviceFamily ?? null,
+    highTicketWeight: typeof b.highTicketWeight === 'number' ? b.highTicketWeight : null,
+    hasWebsite,
+    // Qualification metadata (from discovery)
+    reviewBand: b.reviewBand ?? null,
+    qualificationScore: typeof b.qualificationScore === 'number' ? b.qualificationScore : null,
+    qualificationTier: b.qualificationTier ?? null,
+    qualificationStatus: b.qualificationStatus ?? null,
+    primaryQualificationReason: b.primaryQualificationReason ?? null,
+    disqualificationReasons: Array.isArray(b.disqualificationReasons) ? b.disqualificationReasons : [],
+    scoringBreakdown: Array.isArray(b.scoringBreakdown) ? b.scoringBreakdown : [],
+    evidenceConfidence: b.evidenceConfidence ?? 'unknown',
+    chainRiskLevel: b.chainRiskLevel ?? 'unknown',
+    chainRiskReasons: Array.isArray(b.chainRiskReasons) ? b.chainRiskReasons : [],
+    chainRiskConfidence: b.chainRiskConfidence ?? 'unknown',
+    // No audit yet → website/client/sales defaults
+    ...withOpportunityDefaults(null),
+    ...withClientOpportunityDefaults(null),
+    ...withSalesReasoningDefaults(null),
+  }
+
+  const existing = getLeads()
+  const match = findMatch(record, existing)
+  if (match) {
+    // Repeat save → merge safe newer non-empty metadata; never overwrite audit data.
+    const { id, savedAt, dateSaved, dateDiscovered, auditStatus, ...incoming } = record
+    const merged = mergeLeadRecords(match, incoming)
+    const leads = existing.map(l => (l.id === match.id ? merged : l))
+    setLeads(leads)
+    return { lead: merged, leads, wasUpdate: true }
+  }
+  const leads = [record, ...existing]
+  setLeads(leads)
+  return { lead: record, leads, wasUpdate: false }
+}
+
+// True when a business (Discovery shape) is already saved — for the saved-state icon.
+export function isDiscoveryLeadSaved(business) {
+  return findMatch(business ?? {}, getLeads()) != null
+}
+
 export function isLeadSaved(websiteUrl) {
   return getLeads().some(l => l.websiteUrl === websiteUrl)
 }
 
-// Batch-save bulk audit results into the lead system.
-// Skips results that duplicate an existing lead (by normalized URL) or
-// that duplicate each other within the same batch.
-//
-// `discoveryByUrl` (optional) is a Map keyed by normalizeLeadUrl(...) of a
-// DiscoveryBusiness. When a result matches (by its requested URL), the approved
-// discovery metadata is merged in. Audit-derived values win over empty discovery
-// values — discovery only fills fields the audit doesn't provide.
-// Returns { savedCount, skippedCount, leads }.
+// Batch-save/UPSERT bulk audit results into the lead system (Milestone 15C1).
+// A result that matches an already-saved business (by the carried Saved-Lead id, or by
+// identity — Place ID / domain / phone+name) UPDATES that record instead of creating a
+// duplicate; audit-derived values win over empty discovery values and stronger values
+// are never overwritten. `discoveryByUrl` maps normalizeLeadUrl(...) → a DiscoveryBusiness
+// (or a Saved Lead, which may carry a stable `id` for a Saved-Leads bulk audit).
+// Returns { savedCount, updatedCount, skippedCount, leads }.
 export function saveBulkLeads(results, discoveryByUrl = null) {
-  const existing = getLeads()
-  const existingNormalized = new Set(existing.map(l => normalizeLeadUrl(l.websiteUrl)))
-
-  const batchSeen = new Set()
+  let current = getLeads()
+  const batchSeen = new Set() // identity keys handled in this batch
   let savedCount = 0
-  let skippedCount = 0
-  const newLeads = []
+  let updatedCount = 0
 
   for (const result of results) {
-    const normUrl = normalizeLeadUrl(result.normalizedUrl)
-    if (existingNormalized.has(normUrl) || batchSeen.has(normUrl)) {
-      skippedCount++
-      continue
-    }
-    batchSeen.add(normUrl)
     const emails = result.emailsFound ?? []
-
-    // Match discovery metadata by the URL we requested (pre-redirect), falling
-    // back to the final URL. Null when this was a manually-entered URL.
     const matchKey = normalizeLeadUrl(result.requestedUrl ?? result.normalizedUrl)
     const meta = discoveryByUrl?.get?.(matchKey) ?? null
 
-    // Prefer an audit-derived business name; fall back to discovery. Never let an
-    // empty discovery value clobber a real audit value.
     const auditName = typeof result.businessName === 'string' ? result.businessName.trim() : ''
     const businessName = auditName || (meta?.businessName ?? '')
+    const now = new Date().toISOString()
+    const auditStatus = deriveAuditStatus(result)
+    const completed = auditStatus !== 'not_audited'
 
-    newLeads.push({
-      id: crypto.randomUUID(),
+    const fields = {
       websiteUrl: result.normalizedUrl,
       businessName,
       industry: '',
-      dateSaved: new Date().toISOString(),
       emailsFound: emails,
       bestEmail: getBestEmail(emails),
       pagesChecked: result.pagesChecked ?? [],
       auditNotes: result.auditNotes ?? null,
-      outreachDraft: null,
-      outreachSubject: null,
-      outreachCTA: null,
-      status: 'New',
-      notes: '',
-      lastContactedAt: null,
-      nextFollowUpAt: null,
-      followUpCount: 0,
       leadScore: result.leadScore ?? null,
       leadPriority: result.leadPriority ?? null,
       scoreBreakdown: result.scoreBreakdown ?? [],
-      // Discovery metadata (null when not sent from Lead Discovery)
+      // 15C1 audit status + timestamps
+      auditStatus,
+      siteAvailabilityStatus: result.siteHealth?.siteAvailabilityStatus ?? null,
+      auditedAt: completed ? now : null,
+      lastAuditAttemptAt: now,
+      // Discovery metadata (null when not from Lead Discovery / a Saved Lead)
       phone: meta?.phone ?? null,
       address: meta?.address ?? null,
-      rating: meta?.rating ?? null,
-      reviewCount: meta?.reviewCount ?? null,
+      rating: typeof meta?.rating === 'number' ? meta.rating : null,
+      reviewCount: typeof meta?.reviewCount === 'number' ? meta.reviewCount : null,
       googlePlaceId: meta?.googlePlaceId ?? null,
       primaryType: meta?.primaryType ?? null,
       businessStatus: meta?.businessStatus ?? null,
       discoverySource: meta?.discoverySource ?? null,
-      // Niche metadata (Milestone 15A1)
       selectedNicheId: meta?.selectedNicheId ?? null,
       selectedNicheLabel: meta?.selectedNicheLabel ?? null,
       selectedNicheSearchPhrase: meta?.selectedNicheSearchPhrase ?? null,
       serviceFamily: meta?.serviceFamily ?? null,
       highTicketWeight: typeof meta?.highTicketWeight === 'number' ? meta.highTicketWeight : null,
       hasWebsite: meta ? (meta.hasWebsite ?? true) : Boolean(result.normalizedUrl),
-      // Qualification metadata (Milestone 15A2)
       reviewBand: meta?.reviewBand ?? null,
       qualificationScore: typeof meta?.qualificationScore === 'number' ? meta.qualificationScore : null,
       qualificationTier: meta?.qualificationTier ?? null,
@@ -312,21 +421,36 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
       chainRiskLevel: meta?.chainRiskLevel ?? 'unknown',
       chainRiskReasons: Array.isArray(meta?.chainRiskReasons) ? meta.chainRiskReasons : [],
       chainRiskConfidence: meta?.chainRiskConfidence ?? 'unknown',
-      // Website Opportunity metadata (from the audited result, not discovery)
       ...withOpportunityDefaults(result.opportunity),
-      // Client Opportunity metadata (Milestone 15B2A) — combined from the audited
-      // result + discovery metadata by the caller; safe defaults otherwise.
       ...withClientOpportunityDefaults(result.clientOpportunity),
-      // Sales Reasoning metadata (Milestone 15B2B) — derived by the caller from the
-      // combined result; safe defaults otherwise.
       ...withSalesReasoningDefaults(result.salesReasoning),
-    })
-    savedCount++
+    }
+
+    // Match an existing record: the carried Saved-Lead id first, then identity.
+    const metaId = typeof meta?.id === 'string' ? meta.id : null
+    const existing = (metaId && current.find(l => l.id === metaId)) || findMatch({ ...fields, googlePlaceId: fields.googlePlaceId }, current)
+
+    if (existing) {
+      const merged = mergeLeadRecords(existing, fields)
+      current = current.map(l => (l.id === existing.id ? merged : l))
+      updatedCount++
+    } else {
+      const record = {
+        id: crypto.randomUUID(),
+        dateSaved: now, savedAt: now, updatedAt: now, dateDiscovered: meta ? (meta.dateDiscovered ?? null) : null,
+        outreachDraft: null, outreachSubject: null, outreachCTA: null,
+        status: 'New', notes: '', lastContactedAt: null, nextFollowUpAt: null, followUpCount: 0,
+        ...fields,
+      }
+      current = [record, ...current]
+      savedCount++
+    }
+    batchSeen.add(matchKey)
   }
 
-  const leads = [...newLeads, ...existing]
-  setLeads(leads)
-  return { savedCount, skippedCount, leads }
+  setLeads(current)
+  // skippedCount retained (always 0 now — duplicates update instead of being skipped).
+  return { savedCount, updatedCount, skippedCount: 0, leads: current }
 }
 
 export function getLeadsGenerated() {

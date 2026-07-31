@@ -22,7 +22,7 @@ import { normalizeWebsiteUrl } from './normalizeWebsiteUrl'
  * @property {string|null} selectedNicheSearchPhrase
  * @property {string|null} serviceFamily             null for custom searches
  * @property {number|null} highTicketWeight          null for custom searches
- * @property {boolean}     hasWebsite                always true for a DiscoveryBusiness
+ * @property {boolean}     hasWebsite                true for the audit hand-off; false for a direct no-website save
  * @property {string|null} reviewBand                qualification metadata (15A2)
  * @property {number|null} qualificationScore
  * @property {string|null} qualificationTier
@@ -46,18 +46,21 @@ import { normalizeWebsiteUrl } from './normalizeWebsiteUrl'
  *
  * @param {object} result   a normalized provider result (provider-neutral shape)
  * @param {object} [niche]  { selectedNicheId, selectedNicheLabel, selectedNicheSearchPhrase, serviceFamily, highTicketWeight }
+ * @param {object} [opts]   { allowNoWebsite } — when true, a website-less business is
+ *   still returned (websiteUrl:'' , hasWebsite:false) so it can be saved directly from
+ *   Discovery. The audit hand-off keeps requiring a website and passes this false.
  * @returns {DiscoveryBusiness|null}
  */
-export function toDiscoveryBusiness(result, niche = {}) {
+export function toDiscoveryBusiness(result, niche = {}, opts = {}) {
   if (!result || typeof result !== 'object') return null
   const websiteUrl = normalizeWebsiteUrl(result.websiteUrl)
-  if (!websiteUrl) return null
+  if (!websiteUrl && !opts.allowNoWebsite) return null
 
   const n = niche ?? {}
   const q = result.qualification ?? {}
   return {
     businessName: typeof result.businessName === 'string' ? result.businessName : '',
-    websiteUrl,
+    websiteUrl: websiteUrl ?? '',
     phone: result.phoneNumber ?? null,
     address: result.formattedAddress ?? null,
     rating: typeof result.rating === 'number' ? result.rating : null,
@@ -72,7 +75,7 @@ export function toDiscoveryBusiness(result, niche = {}) {
     selectedNicheSearchPhrase: n.selectedNicheSearchPhrase ?? null,
     serviceFamily: n.serviceFamily ?? null,
     highTicketWeight: typeof n.highTicketWeight === 'number' ? n.highTicketWeight : null,
-    hasWebsite: true, // a DiscoveryBusiness always has a usable website
+    hasWebsite: !!websiteUrl, // true for the audit hand-off; false only for a direct no-website save
     // Qualification metadata (Milestone 15A2) — safe defaults when not evaluated
     reviewBand: q.reviewBand ?? null,
     qualificationScore: typeof q.qualificationScore === 'number' ? q.qualificationScore : null,

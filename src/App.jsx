@@ -22,6 +22,7 @@ import { getSlice, setSlice, clearSession } from './services/sessionState'
 import {
   getLeads,
   saveLead,
+  saveDiscoveryLead,
   getLeadsGenerated,
   incrementLeadsGenerated,
 } from './services/leadStorage'
@@ -121,7 +122,15 @@ export default function App() {
       opportunity: auditResult.opportunity ?? null,
       clientOpportunity: auditResult.clientOpportunity ?? null,
       salesReasoning: auditResult.salesReasoning ?? null,
+      siteHealth: auditResult.siteHealth ?? null,
     })
+    setLeads(updated)
+  }
+
+  // Direct save from Lead Discovery (Milestone 15C1) — persists the compact discovery
+  // record (no audit) and refreshes the in-memory leads so counts + saved badges update.
+  function handleSaveDiscovery(business) {
+    const { leads: updated } = saveDiscoveryLead(business)
     setLeads(updated)
   }
 
@@ -243,6 +252,7 @@ export default function App() {
           selectedLeadId={leadId}
           onOpenLead={openLead}
           onCloseLead={closeLead}
+          onSendToBulk={handleSendToBulk}
         />
         {resetModal}
       </div>
@@ -287,6 +297,8 @@ export default function App() {
         <LeadDiscoveryScreen
           onBack={goHome}
           onSendToBulk={handleSendToBulk}
+          leads={leads}
+          onSaveDiscovery={handleSaveDiscovery}
         />
         {resetModal}
       </div>

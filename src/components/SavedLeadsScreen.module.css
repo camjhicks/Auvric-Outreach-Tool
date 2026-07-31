@@ -48,14 +48,258 @@
   color: var(--color-muted);
 }
 
+/* Section tabs */
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.tabActive {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  background: #1a1f35;
+}
+
+.tabCount {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-muted);
+  background: var(--color-bg);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  min-width: 1.4rem;
+  text-align: center;
+}
+
+.tabActive .tabCount {
+  color: var(--color-primary);
+}
+
 .filterRow {
   display: flex;
   gap: 0.75rem;
   align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .filterRow > :first-child {
   flex: 1;
+  min-width: 160px;
+}
+
+.sortSelect,
+.filterToggle {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.825rem;
+  padding: 0.55rem 0.7rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.sortSelect:focus,
+.filterToggle:hover {
+  border-color: var(--color-primary);
+}
+
+/* Filter panel */
+.filterPanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  align-items: flex-end;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 140px;
+}
+
+.filterLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.filterSelect {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.825rem;
+  padding: 0.5rem 0.6rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.filterSelect:focus {
+  border-color: var(--color-primary);
+}
+
+.resetBtn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.resetBtn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.resetBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Selection + bulk actions */
+.selectionBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.selectionControls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.linkBtn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.linkBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--color-muted);
+}
+
+.selectedCount {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.bulkActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auditSelectedBtn,
+.deleteSelectedBtn {
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.auditSelectedBtn {
+  background: #14261c;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: #4ade80;
+}
+
+.auditSelectedBtn:hover:not(:disabled) {
+  background: #1a3325;
+}
+
+.deleteSelectedBtn {
+  background: #2d1a1a;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #f87171;
+}
+
+.deleteSelectedBtn:hover:not(:disabled) {
+  background: #3a1e1e;
+}
+
+.auditSelectedBtn:disabled,
+.deleteSelectedBtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bulkNote {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  margin: -0.5rem 0 0;
+}
+
+.resetInline {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.resetInline:hover {
+  border-color: var(--color-primary);
 }
 
 .statusSelect {

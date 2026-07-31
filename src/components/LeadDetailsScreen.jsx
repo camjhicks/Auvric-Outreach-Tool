@@ -5,6 +5,10 @@ import ClientOpportunitySection from './ClientOpportunitySection'
 import SalesApproachSection from './SalesApproachSection'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import ExternalLink from './ExternalLink'
+import {
+  websiteStatusOf, auditStatusOf, phoneStatusOf, emailStatusOf, computeEligibility,
+  WEBSITE_STATUS_LABEL, AUDIT_STATUS_LABEL, PHONE_STATUS_LABEL, EMAIL_STATUS_LABEL,
+} from '../utils/leadStatus'
 import styles from './LeadDetailsScreen.module.css'
 
 function getDomain(url) {
@@ -71,6 +75,9 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
     lead.rating != null || lead.businessStatus || lead.googlePlaceId
   )
 
+  const website = websiteStatusOf(lead)
+  const eligibility = computeEligibility(lead)
+
   return (
     <div className={styles.screen}>
       <div className={styles.topBar}>
@@ -84,11 +91,35 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
       <div className={styles.body}>
         <Section title="Business Information">
           {lead.businessName && <InfoRow label="Business">{lead.businessName}</InfoRow>}
-          <InfoRow label="Website">
-            <ExternalLink url={lead.websiteUrl} className={styles.link}>{lead.websiteUrl}</ExternalLink>
-          </InfoRow>
+          {lead.websiteUrl ? (
+            <InfoRow label="Website">
+              <ExternalLink url={lead.websiteUrl} className={styles.link}>{lead.websiteUrl}</ExternalLink>
+            </InfoRow>
+          ) : (
+            <InfoRow label="Website"><span className={styles.muted}>No website listed</span></InfoRow>
+          )}
           {lead.industry && <InfoRow label="Industry">{lead.industry}</InfoRow>}
           <InfoRow label="Saved">{dateLabel}</InfoRow>
+        </Section>
+
+        <Section title="Lead Status">
+          <InfoRow label="Website">{WEBSITE_STATUS_LABEL[website] ?? 'Unknown'}</InfoRow>
+          <InfoRow label="Audit">{AUDIT_STATUS_LABEL[auditStatusOf(lead)] ?? 'Not audited'}</InfoRow>
+          <InfoRow label="Phone">{PHONE_STATUS_LABEL[phoneStatusOf(lead)] ?? 'Unknown'}</InfoRow>
+          <InfoRow label="Email">{EMAIL_STATUS_LABEL[emailStatusOf(lead)] ?? 'Unknown'}</InfoRow>
+          {website === 'no_website' && (
+            <p className={styles.noWebsiteNote}>
+              Website Audit not applicable — Business Profile Research planned.
+            </p>
+          )}
+          {/* Call / Email queue eligibility is prepared for a future milestone; the
+              queues themselves are not built yet, so no queue actions are shown. */}
+          <InfoRow label="Call queue">
+            {eligibility.callQueueEligible ? 'Eligible' : 'Not yet'} — {eligibility.callQueueEligibilityReason}
+          </InfoRow>
+          <InfoRow label="Email queue">
+            {eligibility.emailQueueEligible ? 'Eligible' : 'Not yet'} — {eligibility.emailQueueEligibilityReason}
+          </InfoRow>
         </Section>
 
         {hasDiscovery && (

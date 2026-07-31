@@ -238,3 +238,39 @@
 .mapsLink:hover {
   text-decoration: underline;
 }
+
+.saveRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.6rem;
+}
+
+.saveBtn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  color: var(--color-primary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.saveBtnSaved {
+  border-color: #4ade80;
+  color: #4ade80;
+  cursor: default;
+}
+
+.saveBtnSaved:hover {
+  background: var(--color-surface);
+  color: #4ade80;
+}
