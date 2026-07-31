@@ -578,7 +578,8 @@ confidence) and are **never** given invented reasoning without the required evid
 emails, or messages; no Call List section yet; no outreach-outcome learning. **Everything
 generated must be reviewed by a human before use.**
 
-**Next:** **Milestone 15C1** — Call List Foundation.
+(Integrated with the audit/email reliability and navigation work — see **Milestone 15B4**
+below. The next product milestone is **15C1 — Saved Leads Hub**.)
 
 ## Navigation & session continuity (Milestone 15B2C)
 
@@ -769,9 +770,47 @@ automatically** — the user reviews and copies.
 detection is signal-based and may miss deeply JS-rendered widgets; the email is a reviewed
 draft, not an automated send.
 
-**Next planned milestone:** the **Saved Leads Hub**. Later planned work (not built here):
-Business Profile Research for no-website leads · Call Queue · Email Queue · Call Follow-Up
-Emails · automatic routing · outreach outcomes · the final Auvric Digital visual redesign.
+## Integrated build (Milestone 15B4)
+
+Milestone 15B4 combined the previously-separate 15B2B Sales Reasoning branch into the
+15B2C Navigation + 15B3 Audit/Email line so all completed work lives on one tested
+branch. Nothing was rebuilt — the exact 15B2B commit was cherry-picked and its Sales
+Reasoning computation/UI reinserted into the route-driven, session-restoring architecture,
+on top of the richer 15B3 audit evidence and the reliable 15B3 outreach-email route.
+
+**The integrated branch contains all of:** stable routes + session/scroll restoration +
+safe new-tab external links (15B2C); the three deterministic scoring layers — Discovery
+Qualification, Website Opportunity, Client Opportunity (15A2/15B1/15B2A); Personalized
+Sales Reasoning with cold-call opener, follow-up, CTA, warnings, and manual-review
+(15B2B); stronger site-health, full-page contact/booking detection, separated
+contact-section/form/quote/booking evidence, and guaranteed audit notes (15B3); and the
+reliable AI-plus-deterministic-fallback outreach email with an approved-evidence payload
+and validator (15B3).
+
+**Shared outreach context (contradiction prevention).** The Sales Reasoning layer and the
+email generator both derive from the **same audited evidence** — the Client/Website
+Opportunity results and the audit's booking-path / contact-path / site-health fields — so
+they agree on the primary verified pain point, booking-path status, site availability,
+audit confidence, safe proposed features, and limitations. Cross-feature tests assert
+Scout never contradicts itself (e.g. Sales Approach and email never claim a booking or
+contact form is missing when the audit detected one; a blocked audit never produces
+confident on-site criticism; a phone-only flow is framed as a convenience opportunity, not
+a broken workflow; and a lead with no verified reviews never has review demand invented).
+
+**Persistence & migration.** Saved leads carry the normalized fields for all layers
+(qualification, website opportunity, client opportunity, sales reasoning, site health via
+the audit notes, and outreach metadata); legacy leads migrate with safe null/unknown/empty
+defaults, Sales Reasoning is never fabricated for old leads without evidence, stronger
+values are never overwritten with empties, no raw HTML or provider responses are stored,
+and Reset Workspace never deletes permanent Saved Leads.
+
+**No outreach is ever sent automatically** — every email is a reviewed, copyable draft.
+
+**Next milestone:** **15C1 — Saved Leads Hub.** Later planned work (not built here): direct
+save from Discovery · unaudited and audited Saved-Lead sections · bulk audit and bulk
+delete · Business Profile Research for no-website leads · Call Queue · Email Queue · Call
+Follow-Up Emails · automatic routing · completed call/email sections · outreach outcomes ·
+the final Auvric Digital visual redesign.
 
 ## Local setup
 
