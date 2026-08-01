@@ -10,6 +10,8 @@ export default function ResultsArea({
   isLoading,
   onSave,
   isSaved,
+  onAddToEmailQueue,
+  isQueued,
   onGenerateOutreach,
   isGeneratingOutreach,
   outreachDraft,
@@ -143,6 +145,16 @@ export default function ResultsArea({
               >
                 {isSaved ? 'Saved ✓' : 'Save For Later'}
               </button>
+              {onAddToEmailQueue && (
+                <button
+                  className={styles.saveBtn}
+                  onClick={onAddToEmailQueue}
+                  disabled={isQueued}
+                  title="Save this lead and add it to the Email Queue"
+                >
+                  {isQueued ? 'In Email Queue ✓' : 'Add to Email Queue'}
+                </button>
+              )}
             </div>
           </>
         )}

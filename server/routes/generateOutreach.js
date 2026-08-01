@@ -1,8 +1,10 @@
 import { Router } from 'express'
 import Anthropic from '@anthropic-ai/sdk'
 import { buildOutreachPrompt } from '../utils/buildOutreachPrompt.js'
+import { buildFollowUpPrompt } from '../utils/buildFollowUpPrompt.js'
 import { buildEmailEvidence } from '../utils/buildEmailEvidence.js'
 import { buildDeterministicEmail } from '../utils/deterministicEmail.js'
+import { buildFollowUpEmail } from '../utils/deterministicFollowUp.js'
 import { validateEmail, hasRequiredParts } from '../utils/validateEmail.js'
 import { OUTREACH_MODEL, OUTREACH_MAX_TOKENS, OUTREACH_TIMEOUT_MS, OUTREACH_MAX_RETRIES } from '../config/outreach.js'
 
@@ -27,8 +29,9 @@ function parseModelJson(text) {
   return JSON.parse(match[0])
 }
 
-async function generateWithAI(apiKey, evidence) {
-  const { system, user } = buildOutreachPrompt(evidence)
+async function generateWithAI(apiKey, evidence, stage = 'initial') {
+  const isFollowUp = stage === 'follow_up_1' || stage === 'follow_up_2'
+  const { system, user } = isFollowUp ? buildFollowUpPrompt(evidence, stage) : buildOutreachPrompt(evidence)
   const client = new Anthropic({ apiKey, maxRetries: 0 })
   let lastErr
   for (let attempt = 0; attempt <= OUTREACH_MAX_RETRIES; attempt++) {
@@ -71,6 +74,9 @@ router.post('/', async (req, res) => {
   }
 
   const evidence = buildEmailEvidence(body)
+  // Optional follow-up mode (Milestone 15C2): a SHORTER nudge, same evidence + engine.
+  const stage = body.stage === 'follow_up_1' || body.stage === 'follow_up_2' ? body.stage : 'initial'
+  const isFollowUp = stage !== 'initial'
   const warnings = []
   if (evidence.lowConfidence) warnings.push('Audit confidence is limited, so the email keeps the observation tentative.')
 
@@ -80,7 +86,7 @@ router.post('/', async (req, res) => {
 
   if (apiKey) {
     try {
-      const ai = await generateWithAI(apiKey, evidence)
+      const ai = await generateWithAI(apiKey, evidence, stage)
       const violations = validateEmail(ai, evidence)
       if (violations.length === 0) {
         email = ai
@@ -97,7 +103,7 @@ router.post('/', async (req, res) => {
 
   // Deterministic fallback — Scout never leaves the user with no email.
   if (!email) {
-    email = buildDeterministicEmail(evidence)
+    email = isFollowUp ? buildFollowUpEmail(evidence, stage) : buildDeterministicEmail(evidence)
     source = 'fallback'
     if (apiKey) warnings.push('AI generation was unavailable, so a deterministic draft was created from the verified evidence.')
     else warnings.push('AI generation is not configured, so a deterministic draft was created from the verified evidence.')
@@ -105,7 +111,9 @@ router.post('/', async (req, res) => {
 
   // Final guard: if even the fallback somehow fails validation, strip to a minimal safe email.
   if (validateEmail(email, evidence).length > 0 || !hasRequiredParts(email)) {
-    email = buildDeterministicEmail({ ...evidence, primaryPainAngle: 'insufficient_evidence', primaryPainStatement: 'I had a quick idea about your website', lowConfidence: true })
+    email = isFollowUp
+      ? buildFollowUpEmail({ ...evidence, primaryPainStatement: 'I had a quick idea about your website', lowConfidence: true }, stage)
+      : buildDeterministicEmail({ ...evidence, primaryPainAngle: 'insufficient_evidence', primaryPainStatement: 'I had a quick idea about your website', lowConfidence: true })
     source = 'fallback'
   }
 
@@ -114,6 +122,7 @@ router.post('/', async (req, res) => {
     body: email.body,
     cta: email.cta,
     source, // 'ai' | 'fallback'
+    stage,  // 'initial' | 'follow_up_1' | 'follow_up_2'
     primaryPainPoint: evidence.primaryPainStatement,
     primaryPainAngle: evidence.primaryPainAngle,
     evidenceConfidence: evidence.auditConfidence,

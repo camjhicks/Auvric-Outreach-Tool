@@ -21,7 +21,7 @@ export const SESSION_VERSION = 2
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
 
 // Slices that hold route-specific working state.
-const SLICES = ['discovery', 'bulk', 'savedLeads', 'singleAudit']
+const SLICES = ['discovery', 'bulk', 'savedLeads', 'singleAudit', 'emailQueue']
 
 // In-memory fallback when sessionStorage is unavailable (private mode, quota, SSR).
 let memoryFallback = null
@@ -40,7 +40,7 @@ function safeStorage() {
 }
 
 function emptySession() {
-  return { version: SESSION_VERSION, updatedAt: Date.now(), route: null, discovery: null, bulk: null, savedLeads: null, singleAudit: null, scroll: {} }
+  return { version: SESSION_VERSION, updatedAt: Date.now(), route: null, discovery: null, bulk: null, savedLeads: null, singleAudit: null, emailQueue: null, scroll: {} }
 }
 
 function readRaw() {

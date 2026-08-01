@@ -7,6 +7,7 @@ import SavedLeadsScreen from './components/SavedLeadsScreen'
 import FollowUpQueueScreen from './components/FollowUpQueueScreen'
 import BulkAuditScreen from './components/BulkAuditScreen'
 import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
+import EmailQueueScreen from './components/EmailQueueScreen'
 import ConfirmModal from './components/ConfirmModal'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
@@ -26,6 +27,7 @@ import {
   getLeadsGenerated,
   incrementLeadsGenerated,
 } from './services/leadStorage'
+import { getQueue, addToQueue, addManyToQueue, reconcileWithLeads } from './services/emailQueueStorage'
 import styles from './App.module.css'
 
 export default function App() {
@@ -49,6 +51,7 @@ export default function App() {
   const [inputError, setInputError] = useState(null)
   const [leads, setLeads] = useState(() => getLeads())
   const [leadsGenerated, setLeadsGenerated] = useState(() => getLeadsGenerated())
+  const [emailQueue, setEmailQueue] = useState(() => getQueue())
 
   const [outreachDraft, setOutreachDraft] = useState(null)
   const [isGeneratingOutreach, setIsGeneratingOutreach] = useState(false)
@@ -61,6 +64,13 @@ export default function App() {
     if (auditResult) setSlice('singleAudit', { url: auditResult.url ?? initialUrl, result: auditResult })
   }, [auditResult]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep the Email Queue consistent with Saved Leads: drop any queue record whose Saved
+  // Lead was deleted (spec §18 — deleted-lead references recover safely). Never sends.
+  useEffect(() => {
+    const { removedCount, queue } = reconcileWithLeads(leads)
+    if (removedCount > 0) setEmailQueue(queue)
+  }, [leads])
+
   const stats = {
     generated: leadsGenerated,
     contacted: leads.filter(l => l.status === 'Contacted').length,
@@ -70,6 +80,9 @@ export default function App() {
 
   const isSaved = auditResult
     ? leads.some(l => l.websiteUrl === auditResult.url)
+    : false
+  const currentQueued = auditResult
+    ? (() => { const l = leads.find(x => x.websiteUrl === auditResult.url); return !!l && emailQueue.some(r => r.savedLeadId === l.id) })()
     : false
 
   async function handleAudit(fields) {
@@ -105,9 +118,8 @@ export default function App() {
     }
   }
 
-  function handleSave() {
-    if (!auditResult || isSaved) return
-    const { leads: updated } = saveLead({
+  function saveCurrentAudit() {
+    const { lead, leads: updated } = saveLead({
       websiteUrl: auditResult.url,
       businessName: auditResult.businessName,
       industry: auditResult.industry,
@@ -125,6 +137,20 @@ export default function App() {
       siteHealth: auditResult.siteHealth ?? null,
     })
     setLeads(updated)
+    return lead
+  }
+
+  function handleSave() {
+    if (!auditResult || isSaved) return
+    saveCurrentAudit()
+  }
+
+  // Single-audit → Email Queue: save the lead (if needed) then queue it. Never sends.
+  function handleAddCurrentToEmailQueue() {
+    if (!auditResult) return
+    const existing = leads.find(l => l.websiteUrl === auditResult.url)
+    const lead = existing ?? saveCurrentAudit()
+    if (lead) handleAddToEmailQueue(lead)
   }
 
   // Direct save from Lead Discovery (Milestone 15C1) — persists the compact discovery
@@ -132,6 +158,20 @@ export default function App() {
   function handleSaveDiscovery(business) {
     const { leads: updated } = saveDiscoveryLead(business)
     setLeads(updated)
+  }
+
+  // Add a single Saved Lead to the Email Queue (deduped by savedLeadId). Returns whether
+  // it was newly added so callers can message "added" vs "already queued".
+  function handleAddToEmailQueue(lead) {
+    const { queue, wasAdded } = addToQueue(lead)
+    setEmailQueue(queue)
+    return wasAdded
+  }
+  // Bulk add Saved Leads to the Email Queue (only new records are created).
+  function handleAddManyToEmailQueue(selectedLeads) {
+    const { queue, addedCount, skippedCount } = addManyToQueue(selectedLeads)
+    setEmailQueue(queue)
+    return { addedCount, skippedCount }
   }
 
   async function handleGenerateOutreach() {
@@ -185,6 +225,7 @@ export default function App() {
   const goHome = () => navigateScreen(SCREENS.AUDIT)
   const goLeads = () => navigateScreen(SCREENS.LEADS)
   const goQueue = () => navigateScreen(SCREENS.QUEUE)
+  const goEmailQueue = () => navigateScreen(SCREENS.EMAIL_QUEUE)
   const goDiscovery = () => navigateScreen(SCREENS.DISCOVERY)
   // Navigating to Bulk preserves any existing Bulk working state (it is restored
   // by BulkAuditScreen from the session slice); it no longer wipes it.
@@ -226,6 +267,7 @@ export default function App() {
     onHome: goHome,
     onViewLeads: goLeads,
     onViewQueue: goQueue,
+    onViewEmailQueue: goEmailQueue,
     onViewBulk: goBulk,
     onViewDiscovery: goDiscovery,
     onResetSession: () => setShowReset(true),
@@ -253,6 +295,28 @@ export default function App() {
           onOpenLead={openLead}
           onCloseLead={closeLead}
           onSendToBulk={handleSendToBulk}
+          emailQueue={emailQueue}
+          onAddToEmailQueue={handleAddToEmailQueue}
+          onAddManyToEmailQueue={handleAddManyToEmailQueue}
+          onQueueChange={setEmailQueue}
+          onOpenEmailQueue={goEmailQueue}
+        />
+        {resetModal}
+      </div>
+    )
+  }
+
+  if (screen === SCREENS.EMAIL_QUEUE) {
+    return (
+      <div className={styles.app}>
+        <Header {...headerProps} onViewEmailQueue={undefined} />
+        <StatsBar stats={stats} />
+        <EmailQueueScreen
+          leads={leads}
+          queue={emailQueue}
+          onBack={goHome}
+          onQueueChange={setEmailQueue}
+          onOpenLead={openLead}
         />
         {resetModal}
       </div>
@@ -316,6 +380,8 @@ export default function App() {
           isLoading={isLoading}
           onSave={handleSave}
           isSaved={isSaved}
+          onAddToEmailQueue={handleAddCurrentToEmailQueue}
+          isQueued={currentQueued}
           onGenerateOutreach={handleGenerateOutreach}
           isGeneratingOutreach={isGeneratingOutreach}
           outreachDraft={outreachDraft}

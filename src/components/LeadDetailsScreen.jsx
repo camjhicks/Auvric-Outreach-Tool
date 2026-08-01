@@ -4,6 +4,7 @@ import ConfirmModal from './ConfirmModal'
 import ClientOpportunitySection from './ClientOpportunitySection'
 import SalesApproachSection from './SalesApproachSection'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
+import LeadEmailOutreachSection from './LeadEmailOutreachSection'
 import ExternalLink from './ExternalLink'
 import {
   websiteStatusOf, auditStatusOf, phoneStatusOf, emailStatusOf, computeEligibility,
@@ -40,7 +41,10 @@ function InfoRow({ label, children }) {
   )
 }
 
-export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutreachSave }) {
+export default function LeadDetailsScreen({
+  lead, onBack, onNotesChange, onOutreachSave,
+  queueRecord = null, onAddToQueue, onQueueChange, onOpenEmailQueue,
+}) {
   const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
   const [outreachDirty, setOutreachDirty] = useState(false)
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false)
@@ -188,6 +192,16 @@ export default function LeadDetailsScreen({ lead, onBack, onNotesChange, onOutre
               )}
             </>
           )}
+        </Section>
+
+        <Section title="Email Outreach">
+          <LeadEmailOutreachSection
+            lead={lead}
+            record={queueRecord}
+            onAddToQueue={onAddToQueue}
+            onQueueChange={onQueueChange}
+            onOpenEmailQueue={onOpenEmailQueue}
+          />
         </Section>
 
         {lead.auditNotes && (

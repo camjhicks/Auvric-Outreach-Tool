@@ -58,6 +58,7 @@ const CONTACTED_AND_BEYOND = new Set([
 export default function LeadCard({
   lead, onStatusChange, onNotesChange, onDelete, onViewDetails,
   selectable = false, selected = false, onToggleSelect, onAudit,
+  onAddToEmailQueue, queued = false, onOpenEmailQueue,
 }) {
   const [showNotes, setShowNotes] = useState(false)
   const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
@@ -144,6 +145,11 @@ export default function LeadCard({
             <button className={styles.auditBtn} onClick={() => onAudit(lead.id)}>
               {hasCompletedAudit(lead) ? 'Re-audit' : 'Audit'}
             </button>
+          )}
+          {onAddToEmailQueue && (
+            queued
+              ? <button className={styles.queuedBtn} onClick={() => onOpenEmailQueue && onOpenEmailQueue()}>✓ In Email Queue</button>
+              : <button className={styles.emailBtn} onClick={() => onAddToEmailQueue(lead.id)}>Add to Email Queue</button>
           )}
           {canMarkContacted && (
             <button className={styles.contactBtn} onClick={() => setConfirmContact(true)}>

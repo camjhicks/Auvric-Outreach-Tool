@@ -170,7 +170,9 @@
 .detailsBtn,
 .contactBtn,
 .deleteBtn,
-.auditBtn {
+.auditBtn,
+.emailBtn,
+.queuedBtn {
   font-size: 0.775rem;
   font-weight: 600;
   padding: 0.35rem 0.65rem;
@@ -178,6 +180,7 @@
   border: none;
   transition: background 0.15s;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .auditBtn {
@@ -187,6 +190,21 @@
 
 .auditBtn:hover {
   background: #1a3325;
+}
+
+.emailBtn {
+  background: #1a1f35;
+  color: #818cf8;
+}
+
+.emailBtn:hover {
+  background: #1e2540;
+}
+
+.queuedBtn {
+  background: none;
+  color: #818cf8;
+  border: 1px solid rgba(129, 140, 248, 0.4) !important;
 }
 
 .detailsBtn {

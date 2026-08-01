@@ -1,0 +1,66 @@
+// Build the /api/generate-outreach request body from a Saved Lead (Milestone 15C2).
+// Pure. The Saved Lead stores the flattened audit + opportunity + sales-reasoning
+// fields; this maps them onto the SAME approved `audit` evidence shape the existing
+// 15B3/15B4 email engine already consumes — so there is ONE email-generation engine.
+
+// Map the deterministic Sales-Reasoning angle to the email engine's pain angle.
+const SALES_ANGLE_TO_EMAIL = {
+  booking_friction: 'no_booking_path',
+  no_quote_request: 'weak_conversion_path',
+  no_scheduling: 'no_booking_path',
+  weak_contact_flow: 'weak_contact_visibility',
+  phone_only_booking: 'phone_only_flow',
+  linknow_opportunity: 'strong_site_limited_opportunity',
+  generic_template_opportunity: 'strong_site_limited_opportunity',
+  strong_demand_weak_conversion: 'weak_conversion_path',
+  weak_review_visibility: 'weak_trust',
+  weak_trust: 'weak_trust',
+  weak_service_clarity: 'weak_service_clarity',
+  weak_mobile_technical: 'weak_conversion_path',
+  no_website: 'insufficient_evidence',
+  website_audit_blocked: 'website_audit_blocked',
+  insufficient_evidence: 'insufficient_evidence',
+}
+
+function emailAngleFor(lead) {
+  const l = lead ?? {}
+  if (l.siteAvailabilityStatus === 'unavailable' || l.siteAvailabilityStatus === 'timed_out') return 'website_unavailable'
+  if (l.siteAvailabilityStatus === 'blocked' || l.auditStatus === 'audit_blocked') return 'website_audit_blocked'
+  const mapped = SALES_ANGLE_TO_EMAIL[l.primarySalesAngle]
+  return mapped ?? 'insufficient_evidence'
+}
+
+/**
+ * @param {object} lead   a Saved Lead record
+ * @param {object} [opts] { email, stage }  stage: 'initial' | 'follow_up_1' | 'follow_up_2'
+ * @returns {object} the generate-outreach request body
+ */
+export function buildDraftRequestFromLead(lead, { email = null, stage = 'initial' } = {}) {
+  const l = lead ?? {}
+  const contactEmail = email ?? l.bestEmail ?? (Array.isArray(l.emailsFound) && l.emailsFound.length ? l.emailsFound[0] : null)
+  const angle = emailAngleFor(l)
+  const audit = {
+    serviceFamily: l.serviceFamily ?? null,
+    nicheLabel: l.selectedNicheLabel ?? l.industry ?? null,
+    city: null, // Saved Leads store a full address, not a normalized city — omit rather than guess.
+    rating: typeof l.rating === 'number' ? l.rating : null,
+    reviewCount: typeof l.reviewCount === 'number' ? l.reviewCount : null,
+    reviewBand: l.reviewBand ?? null,
+    hasWebsite: l.hasWebsite !== false,
+    siteAvailabilityStatus: l.siteAvailabilityStatus ?? 'working',
+    primaryPainAngle: angle,
+    recommendedOutreachAngle: angle,
+    verifiedOpportunityReason: l.primaryWebsiteOpportunityReason ?? null,
+    bookingPathStatus: l.bookingFrictionLevel ?? null,
+    auditConfidence: l.evidenceConfidence ?? l.websiteEvidenceConfidence ?? 'unknown',
+    auditLimitations: Array.isArray(l.auditLimitations) ? l.auditLimitations : [],
+  }
+  return {
+    url: l.websiteUrl || null,
+    businessName: l.businessName ?? null,
+    industry: l.selectedNicheLabel ?? l.industry ?? null,
+    email: contactEmail,
+    audit,
+    stage,
+  }
+}

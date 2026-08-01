@@ -2,8 +2,8 @@
 //
 // Scout uses real pathname-based routes backed by the History API. The production
 // server already serves index.html for any non-/api path (SPA fallback), so a
-// refresh or a direct visit to a valid route lands on that route. Routes for
-// unfinished sections (Call Queue, Email Queue) are intentionally NOT defined yet.
+// refresh or a direct visit to a valid route lands on that route. The Call Queue
+// route is intentionally NOT defined yet (unfinished).
 
 export const ROUTES = Object.freeze({
   HOME: '/',
@@ -11,6 +11,7 @@ export const ROUTES = Object.freeze({
   BULK: '/bulk',
   LEADS: '/leads',
   QUEUE: '/queue',
+  EMAIL_QUEUE: '/email-queue',
 })
 
 // The internal "screen" keys App already uses.
@@ -20,6 +21,7 @@ export const SCREENS = Object.freeze({
   BULK: 'bulk',
   LEADS: 'leads',
   QUEUE: 'queue',
+  EMAIL_QUEUE: 'email_queue',
 })
 
 /**
@@ -33,6 +35,7 @@ export function parseRoute(pathname) {
   if (path === ROUTES.DISCOVERY) return { screen: SCREENS.DISCOVERY, leadId: null, invalid: false }
   if (path === ROUTES.BULK) return { screen: SCREENS.BULK, leadId: null, invalid: false }
   if (path === ROUTES.QUEUE) return { screen: SCREENS.QUEUE, leadId: null, invalid: false }
+  if (path === ROUTES.EMAIL_QUEUE) return { screen: SCREENS.EMAIL_QUEUE, leadId: null, invalid: false }
   if (path === ROUTES.LEADS) return { screen: SCREENS.LEADS, leadId: null, invalid: false }
   const m = path.match(/^\/leads\/([A-Za-z0-9._-]{1,128})$/)
   if (m) return { screen: SCREENS.LEADS, leadId: decodeURIComponent(m[1]), invalid: false }
@@ -45,6 +48,7 @@ export function routeForScreen(screen, leadId = null) {
     case SCREENS.DISCOVERY: return ROUTES.DISCOVERY
     case SCREENS.BULK: return ROUTES.BULK
     case SCREENS.QUEUE: return ROUTES.QUEUE
+    case SCREENS.EMAIL_QUEUE: return ROUTES.EMAIL_QUEUE
     case SCREENS.LEADS: return leadId ? `${ROUTES.LEADS}/${encodeURIComponent(leadId)}` : ROUTES.LEADS
     case SCREENS.AUDIT:
     default: return ROUTES.HOME

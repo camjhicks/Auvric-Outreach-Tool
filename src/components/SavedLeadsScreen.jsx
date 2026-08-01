@@ -68,6 +68,7 @@ const EMAIL_FILTER_OPTIONS = [
 // the session slice — never the permanent Saved Leads data itself.
 export default function SavedLeadsScreen({
   leads, onBack, onLeadsChange, selectedLeadId = null, onOpenLead, onCloseLead, onSendToBulk,
+  emailQueue = [], onAddToEmailQueue, onAddManyToEmailQueue, onQueueChange, onOpenEmailQueue,
 }) {
   const restored = getSlice('savedLeads') ?? {}
   // Default to All Leads so a lead is always visible right after saving, whatever its
@@ -85,6 +86,9 @@ export default function SavedLeadsScreen({
   )
   const [showFilters, setShowFilters] = useState(false)
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [queueMessage, setQueueMessage] = useState(null)
+
+  const queuedIds = useMemo(() => new Set((emailQueue ?? []).map(r => r.savedLeadId)), [emailQueue])
 
   // Persist the transient hub controls (never the permanent Saved Leads data).
   useEffect(() => {
@@ -203,6 +207,20 @@ export default function SavedLeadsScreen({
     const lead = leads.find(l => l.id === id)
     if (lead && lead.websiteUrl) onSendToBulk([lead])
   }
+  function handleAddOneToQueue(id) {
+    if (!onAddToEmailQueue) return
+    const lead = leads.find(l => l.id === id)
+    if (!lead) return
+    const wasAdded = onAddToEmailQueue(lead)
+    setQueueMessage(wasAdded ? `${lead.businessName || 'Lead'} added to Email Queue.` : `${lead.businessName || 'Lead'} is already in the Email Queue.`)
+  }
+  function handleAddSelectedToQueue() {
+    if (!onAddManyToEmailQueue) return
+    const chosen = [...selected].map(id => leads.find(l => l.id === id)).filter(Boolean)
+    if (chosen.length === 0) return
+    const { addedCount, skippedCount } = onAddManyToEmailQueue(chosen)
+    setQueueMessage(`${addedCount} added to Email Queue${skippedCount ? `, ${skippedCount} already queued` : ''}.`)
+  }
 
   if (selectedLead) {
     return (
@@ -211,6 +229,10 @@ export default function SavedLeadsScreen({
         onBack={() => onCloseLead && onCloseLead()}
         onNotesChange={handleNotesChange}
         onOutreachSave={handleOutreachSave}
+        queueRecord={(emailQueue ?? []).find(r => r.savedLeadId === selectedLead.id) ?? null}
+        onAddToQueue={() => onAddToEmailQueue && onAddToEmailQueue(selectedLead)}
+        onQueueChange={onQueueChange}
+        onOpenEmailQueue={onOpenEmailQueue}
       />
     )
   }
@@ -333,6 +355,15 @@ export default function SavedLeadsScreen({
               Audit Selected ({auditPartition.eligible.length})
             </button>
           )}
+          {onAddManyToEmailQueue && (
+            <button
+              className={styles.queueSelectedBtn}
+              onClick={handleAddSelectedToQueue}
+              disabled={selectedCount === 0}
+            >
+              Add to Email Queue ({selectedCount})
+            </button>
+          )}
           <button
             className={styles.deleteSelectedBtn}
             onClick={() => setConfirmBulkDelete(true)}
@@ -342,6 +373,14 @@ export default function SavedLeadsScreen({
           </button>
         </div>
       </div>
+
+      {queueMessage && (
+        <div className={styles.queueMessage} role="status">
+          {queueMessage}
+          {onOpenEmailQueue && <button className={styles.queueMsgLink} onClick={onOpenEmailQueue}>Open Email Queue →</button>}
+          <button className={styles.queueMsgClose} onClick={() => setQueueMessage(null)} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {selectedCount > 0 && (auditPartition.excluded.length > 0 || auditPartition.overflow > 0) && (
         <p className={styles.bulkNote}>
@@ -382,6 +421,9 @@ export default function SavedLeadsScreen({
               selected={selected.has(lead.id)}
               onToggleSelect={toggleSelect}
               onAudit={onSendToBulk ? handleAuditOne : undefined}
+              onAddToEmailQueue={onAddToEmailQueue ? handleAddOneToQueue : undefined}
+              queued={queuedIds.has(lead.id)}
+              onOpenEmailQueue={onOpenEmailQueue}
             />
           ))}
         </div>

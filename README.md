@@ -867,10 +867,109 @@ migrate lazily with safe defaults — nothing is recomputed or fabricated, `audi
 `auditedAt` stay null until a real audit, and stronger values are never overwritten with
 blanks. Reset Workspace still preserves all Saved Leads.
 
-**Next milestone:** **15C2 — Business Profile Research** (for no-website leads). Later
-planned work (not built here): Call Queue · Email Queue · Call Follow-Up Emails · automatic
-routing · completed call/email sections · outreach outcomes · the final Auvric Digital
-visual redesign.
+**Next milestone:** **15C2 — Email-First Outreach Queue** (below).
+
+## Email Outreach Queue (Milestone 15C2)
+
+An email-first workflow to start outreach fast while leaning less on cold calls. It lets
+you organize email-ready leads, draft personalized emails, copy and send them yourself,
+record what happened, and schedule follow-ups. **Scout never sends email automatically —
+every send is your manual action, and "Mark as Sent" only records that you sent it.**
+
+**Route + navigation.** A stable `/email-queue` route (in the top nav) that survives
+refresh, Back/Forward, and direct entry via the SPA fallback. The active section, search,
+filters, sort, and safe selection persist through the existing session architecture; a
+refresh never regenerates a draft, marks anything sent, or changes an outcome. Reset
+Workspace clears transient view state but never deletes permanent queue records.
+
+**Sections (with live counts).**
+- **Needs Email** — queued leads without a usable email yet (not checked / not found /
+  unknown / manually added with no email). Scout never claims no email exists.
+- **Ready to Draft** — a usable email but no completed draft.
+- **Draft Ready** — a generated draft ready to review and send manually.
+- **Follow-Ups** — an initial email marked sent, with a follow-up date due or upcoming.
+- **Completed** — replied, meeting scheduled, not interested, disqualified, do-not-contact,
+  or completed manually.
+- **All Email Leads** — the combined view.
+
+**Adding / removing leads.** Add from a Saved Leads card, Saved Lead details, or a
+completed single audit result; select several Saved Leads and **Add to Email Queue** in
+bulk. Each queue record references the permanent **Saved Lead id** — it never creates a
+second business record, is deduplicated so a lead is queued only once (if already queued
+it shows its current status), and can be removed from the queue without deleting the Saved
+Lead. Deleting a Saved Lead reconciles its queue record away safely.
+
+**Email address model.** Normalized fields (`emailAddress`, `emailSource`, `emailStatus`,
+`emailConfidence`, `emailVerifiedAt`, `emailLastCheckedAt`, `emailManuallyEntered`,
+`emailEvidencePage`). Statuses: found · manually entered · not found during audit · not
+checked · invalid · unknown. **"Found" means publicly located, not verified deliverable**,
+and **"not found during audit" does not mean no email exists.** Addresses are structurally
+validated; only the domain is lowercased (the local part is never silently altered).
+
+**Manual email entry / correction.** Enter, correct, or remove an email; a manual entry is
+marked as such and kept at higher confidence, a valid email is never overwritten by a blank
+or weaker value, replacements keep a concise history entry, and you can never draft to an
+invalid address. Removing an email never deletes the Saved Lead.
+
+**Draft generation.** Reuses the **same** grounded 15B3/15B4 outreach engine (one verified
+pain point → a respectful friction explanation → a smooth transition to a new
+Auvric Digital website → relevant proposed features → booking/quote/consultation section
+when appropriate → free custom mockup → one simple question, no unsupported claims, no em
+dashes). Actions: Generate / Regenerate Draft, Copy Subject, Copy Body, Copy Full Email.
+Each draft shows whether it is **AI-assisted or a deterministic fallback**, the verified
+pain point, confidence, and warnings. A failed regeneration keeps the previous successful
+draft; duplicate generation clicks are guarded. **Deterministic fallback** always produces
+a safe email when Anthropic is unavailable, rate-limited, times out, or returns invalid
+output — so you are never left with nothing. Nothing is sent.
+
+**Manual sent tracking.** **Mark as Sent** requires confirmation that makes clear Scout
+does not send anything; it records `initialEmailSentAt` (first email) / `lastEmailSentAt`,
+increments the follow-up count, moves the lead into follow-up state, and sets a default
+follow-up date (**3 calendar days** out, editable before confirming). A double-click guard
+prevents accidental duplicate sent records, and the prior draft is kept.
+
+**Follow-up workflow.** States: upcoming · due today · overdue · completed · cancelled.
+Generate / Copy / Mark Sent a follow-up, Reschedule, or record Replied / Meeting Scheduled
+/ Not Interested / Complete. Follow-up drafts are **shorter (about 35-80 words)**, reference
+the prior message naturally, avoid fake urgency or guilt, keep one simple CTA, and fall back
+deterministically. **Two stages** (Follow-Up 1 ~3 days after the initial email; Follow-Up 2
+~4-7 days after) — no unlimited sequences, and nothing sends automatically.
+
+**Outcomes.** No Reply (keeps follow-up eligibility) · Replied · Interested · Meeting
+Scheduled (completes the workflow, keeps meeting notes) · Send More Information · Not
+Interested · Wrong Email (returns the lead to **Needs Email**, keeping the prior draft) ·
+Unsubscribe / Do Not Contact · Disqualified · Completed. Outcomes never delete the Saved
+Lead and store timestamps + optional notes.
+
+**Do-not-contact protection.** `emailDoNotContact` / `emailDoNotContactReason` /
+`emailDoNotContactAt`. A do-not-contact lead is parked out of the active pipeline and
+**cannot** be returned to Ready to Draft or Follow-Ups without an explicit, confirmed manual
+override (the history is preserved). Bulk actions always exclude do-not-contact leads. This
+organizes your choices — it is **not** a legal-compliance certification.
+
+**Bulk actions.** Add selected Saved Leads to the queue · Generate drafts for eligible
+selected leads (sequential, capped at **10 per batch**; a partial failure keeps the
+successful drafts) · Mark selected as Sent (confirmation required; records activity only,
+sends nothing) · Set a follow-up date · Remove selected from the queue. Every bulk action
+shows eligible and excluded counts with reasons, and excludes do-not-contact leads. No mass
+automatic sending exists.
+
+**Storage + persistence.** Queue records are compact (email-workflow data only; business
+details are resolved live from the Saved Lead) and never store raw HTML or provider
+responses. A centralized `emailQueueStorage` service funnels all reads/writes through a
+single boundary so storage can later move from `localStorage` to a real database **without
+rewriting UI logic**; storage failures degrade gracefully instead of crashing.
+
+**Future sending integration boundary (documented, not built).** `outreachProvider`
+exposes `generateDraft` and `recordManualSend` today; `sendEmail` and `syncReplies` are
+defined as the future seam a Gmail/SMTP integration would implement behind the same
+interface. **No Gmail, OAuth, SMTP, webhook, or background sending exists**, and Scout never
+claims an email was delivered.
+
+**Next milestone:** **15C3 — Business Profile Research for No-Website Leads.** Later planned
+work (not built here): Business Profile Research · Call Queue · automatic routing · a
+completed-outreach dashboard · advertisement lead intake · real database migration · the
+final Auvric Digital redesign.
 
 ## Local setup
 

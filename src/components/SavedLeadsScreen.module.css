@@ -250,6 +250,56 @@
   white-space: nowrap;
 }
 
+.queueSelectedBtn {
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+  background: #1a1f35;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  color: #818cf8;
+  transition: border-color 0.15s;
+}
+
+.queueSelectedBtn:hover:not(:disabled) { border-color: var(--color-primary); }
+.queueSelectedBtn:disabled { opacity: 0.35; cursor: default; }
+
+.queueMessage {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  color: var(--color-text);
+  background: #1a1f35;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+
+.queueMsgLink {
+  background: none;
+  border: none;
+  color: #818cf8;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.queueMsgClose {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .auditSelectedBtn {
   background: #14261c;
   border: 1px solid rgba(74, 222, 128, 0.4);
