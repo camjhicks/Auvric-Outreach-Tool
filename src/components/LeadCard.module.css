@@ -172,6 +172,7 @@
 .deleteBtn,
 .auditBtn,
 .emailBtn,
+.researchBtn,
 .queuedBtn {
   font-size: 0.775rem;
   font-weight: 600;
@@ -199,6 +200,15 @@
 
 .emailBtn:hover {
   background: #1e2540;
+}
+
+.researchBtn {
+  background: #14261c;
+  color: #4ade80;
+}
+
+.researchBtn:hover {
+  background: #1a3325;
 }
 
 .queuedBtn {

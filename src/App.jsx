@@ -8,6 +8,7 @@ import FollowUpQueueScreen from './components/FollowUpQueueScreen'
 import BulkAuditScreen from './components/BulkAuditScreen'
 import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import EmailQueueScreen from './components/EmailQueueScreen'
+import ProfileResearchScreen from './components/ProfileResearchScreen'
 import ConfirmModal from './components/ConfirmModal'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
@@ -226,6 +227,7 @@ export default function App() {
   const goLeads = () => navigateScreen(SCREENS.LEADS)
   const goQueue = () => navigateScreen(SCREENS.QUEUE)
   const goEmailQueue = () => navigateScreen(SCREENS.EMAIL_QUEUE)
+  const goProfileResearch = () => navigateScreen(SCREENS.PROFILE_RESEARCH)
   const goDiscovery = () => navigateScreen(SCREENS.DISCOVERY)
   // Navigating to Bulk preserves any existing Bulk working state (it is restored
   // by BulkAuditScreen from the session slice); it no longer wipes it.
@@ -268,6 +270,7 @@ export default function App() {
     onViewLeads: goLeads,
     onViewQueue: goQueue,
     onViewEmailQueue: goEmailQueue,
+    onViewProfileResearch: goProfileResearch,
     onViewBulk: goBulk,
     onViewDiscovery: goDiscovery,
     onResetSession: () => setShowReset(true),
@@ -300,6 +303,7 @@ export default function App() {
           onAddManyToEmailQueue={handleAddManyToEmailQueue}
           onQueueChange={setEmailQueue}
           onOpenEmailQueue={goEmailQueue}
+          onOpenProfileResearch={goProfileResearch}
         />
         {resetModal}
       </div>
@@ -317,6 +321,25 @@ export default function App() {
           onBack={goHome}
           onQueueChange={setEmailQueue}
           onOpenLead={openLead}
+        />
+        {resetModal}
+      </div>
+    )
+  }
+
+  if (screen === SCREENS.PROFILE_RESEARCH) {
+    return (
+      <div className={styles.app}>
+        <Header {...headerProps} onViewProfileResearch={undefined} />
+        <StatsBar stats={stats} />
+        <ProfileResearchScreen
+          leads={leads}
+          onBack={goHome}
+          onLeadsChange={handleLeadsChange}
+          onOpenLead={openLead}
+          emailQueue={emailQueue}
+          onAddToEmailQueue={handleAddToEmailQueue}
+          onOpenEmailQueue={goEmailQueue}
         />
         {resetModal}
       </div>

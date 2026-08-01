@@ -1,0 +1,46 @@
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  transition: border-color 0.15s;
+}
+.cardSelected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+
+.top { display: flex; align-items: flex-start; gap: 0.6rem; }
+.selectBox { width: 1.05rem; height: 1.05rem; margin-top: 0.15rem; accent-color: var(--color-primary); cursor: pointer; flex-shrink: 0; }
+.titleCol { flex: 1; min-width: 0; }
+.name { font-size: 0.95rem; font-weight: 700; color: var(--color-text); word-break: break-word; }
+.subLine { font-size: 0.78rem; color: var(--color-text); display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.muted { color: var(--color-muted); }
+.tier {
+  font-size: 0.74rem; font-weight: 700; border: 1px solid var(--color-border); border-radius: 999px;
+  padding: 0.1rem 0.5rem; white-space: nowrap; flex-shrink: 0;
+}
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip {
+  font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--color-border); color: var(--color-muted); white-space: nowrap;
+}
+.chipPos { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); }
+.chipMuted { color: var(--color-muted); }
+
+.summary { font-size: 0.82rem; color: var(--color-muted); margin: 0; line-height: 1.5; }
+
+.actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.btn, .primaryBtn, .queuedBtn {
+  font-family: inherit; font-size: 0.78rem; font-weight: 600; padding: 0.4rem 0.75rem;
+  border-radius: 8px; cursor: pointer; white-space: nowrap; transition: border-color 0.15s, background 0.15s;
+}
+.btn { background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text); }
+.btn:hover { border-color: var(--color-primary); }
+.primaryBtn { background: var(--color-primary); border: none; color: #fff; }
+.primaryBtn:hover:not(:disabled) { opacity: 0.9; }
+.primaryBtn:disabled { opacity: 0.4; cursor: default; }
+.queuedBtn { background: none; border: 1px solid rgba(129, 140, 248, 0.4); color: #818cf8; }
+.mapsLink { font-size: 0.78rem; color: var(--color-primary); text-decoration: none; white-space: nowrap; }
+.mapsLink:hover { text-decoration: underline; }

@@ -6,11 +6,13 @@ import auditRouter from './routes/audit.js'
 import generateOutreachRouter from './routes/generateOutreach.js'
 import bulkAuditRouter from './routes/bulkAudit.js'
 import discoverLeadsRouter from './routes/discoverLeads.js'
+import profileDetailsRouter from './routes/profileDetails.js'
 import {
   auditLimiter,
   bulkAuditLimiter,
   discoverLimiter,
   outreachLimiter,
+  profileDetailsLimiter,
 } from './middleware/rateLimit.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -38,6 +40,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/audit', auditLimiter, auditRouter)
 app.use('/api/bulk-audit', bulkAuditLimiter, bulkAuditRouter)
 app.use('/api/discover-leads', discoverLimiter, discoverLeadsRouter)
+app.use('/api/profile-details', profileDetailsLimiter, profileDetailsRouter)
 app.use('/api/generate-outreach', outreachLimiter, generateOutreachRouter)
 
 // Unknown API routes return JSON 404 and never fall through to the SPA.

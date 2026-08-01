@@ -38,6 +38,9 @@ export const AUVRIC_FEATURES = Object.freeze({
 
 // Which features are most relevant to a given verified pain point (pick a few, not all).
 export const FEATURES_BY_ANGLE = Object.freeze({
+  // No main website listed (Milestone 15C3) — the site would centralize services,
+  // proof, and inquiries for a business customers currently reach by phone / Maps.
+  no_main_website: ['service_sections', 'booking_section', 'call_text_actions', 'reviews_proof', 'mobile_first'],
   website_unavailable: ['faster_path', 'strong_cta', 'mobile_first', 'simple_forms'],
   website_audit_blocked: ['booking_section', 'strong_cta', 'faster_path'],
   no_booking_path: ['booking_section', 'strong_cta', 'call_text_actions', 'next_step'],

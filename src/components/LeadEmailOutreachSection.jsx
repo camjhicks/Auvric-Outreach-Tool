@@ -26,7 +26,8 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
   const [emailInput, setEmailInput] = useState('')
   const [sentDate, setSentDate] = useState(() => new Date().toISOString().slice(0, 10))
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
+  // Re-set true on remount (StrictMode double-invokes effects); false only on unmount.
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   const derived = deriveEmailFromLead(lead)
 

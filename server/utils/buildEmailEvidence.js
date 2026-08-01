@@ -11,6 +11,7 @@ const str = v => (typeof v === 'string' && v.trim() ? v.trim() : null)
 
 // Respectful, verified pain statements keyed by the audit's recommended angle.
 const PAIN_STATEMENT = {
+  no_main_website: 'I could not find a main website for the business, so customers are mostly relying on calls and your Google listing to reach you',
   website_unavailable: 'the website did not load when I checked, so customers may have trouble reaching you right now',
   website_audit_blocked: "I couldn't fully load the site to see how customers book or get in touch",
   no_booking_path: "I couldn't find a clear way for customers to book, request a quote, or reach you online",
@@ -23,6 +24,7 @@ const PAIN_STATEMENT = {
   insufficient_evidence: 'I had a quick idea about your website',
 }
 const SUBJECT_STYLE_BY_ANGLE = {
+  no_main_website: 'website',
   website_unavailable: 'unavailable', website_audit_blocked: 'website',
   no_booking_path: 'booking', weak_conversion_path: 'booking', phone_only_flow: 'booking',
   weak_contact_visibility: 'contact', weak_trust: 'website', weak_service_clarity: 'website',

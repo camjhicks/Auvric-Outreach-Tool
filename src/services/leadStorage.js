@@ -3,6 +3,7 @@ import { DEFAULT_OPPORTUNITY } from '../config/websiteOpportunity.js'
 import { DEFAULT_CLIENT_OPPORTUNITY } from '../config/clientOpportunity.js'
 import { DEFAULT_SALES_REASONING } from '../config/salesReasoning.js'
 import { findMatch, mergeLeadRecords } from '../utils/leadIdentity.js'
+import { withProfileResearchDefaults } from '../utils/profileResearch.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
@@ -147,6 +148,9 @@ function migrateLead(lead) {
     // Sales Reasoning metadata (Milestone 15B2B) — safe defaults; never invented for
     // legacy leads that lack the required verified evidence.
     ...withSalesReasoningDefaults(lead),
+    // Business Profile Research metadata (Milestone 15C3) — safe defaults for leads
+    // that have not been researched. Never fabricated for legacy records.
+    ...withProfileResearchDefaults(lead),
   }
 }
 
@@ -344,6 +348,44 @@ export function saveDiscoveryLead(business) {
   const leads = [record, ...existing]
   setLeads(leads)
   return { lead: record, leads, wasUpdate: false }
+}
+
+/**
+ * Save/UPDATE a Business Profile Research result onto an existing Saved Lead by id
+ * (Milestone 15C3). Upserts the research fields in place — never creates a second
+ * record and never touches Website Audit or Client Opportunity fields. Re-running
+ * research overwrites the prior research result. Returns { lead, leads }.
+ */
+export function saveProfileResearch(leadId, research) {
+  const leads = getLeads()
+  const idx = leads.findIndex(l => l.id === leadId)
+  if (idx === -1) return { lead: null, leads }
+  const merged = { ...leads[idx], ...(research ?? {}), updatedAt: new Date().toISOString() }
+  const next = leads.slice()
+  next[idx] = merged
+  setLeads(next)
+  return { lead: merged, leads: next }
+}
+
+// Correct a lead's website status (Milestone 15C3) — e.g. a no-website lead that
+// actually has a site, or vice versa. Used before deciding Audit vs. Profile Research.
+export function correctWebsiteStatus(leadId, { websiteUrl, hasWebsite }) {
+  const leads = getLeads()
+  const idx = leads.findIndex(l => l.id === leadId)
+  if (idx === -1) return { lead: null, leads }
+  const l = leads[idx]
+  const url = typeof websiteUrl === 'string' ? websiteUrl.trim() : l.websiteUrl
+  const has = typeof hasWebsite === 'boolean' ? hasWebsite : Boolean(url)
+  const merged = {
+    ...l, websiteUrl: url ?? '', hasWebsite: has,
+    // Correcting to "has a website" clears any no-website research status.
+    auditStatus: has && l.auditStatus === 'not_applicable_no_website' ? 'not_audited' : l.auditStatus,
+    updatedAt: new Date().toISOString(),
+  }
+  const next = leads.slice()
+  next[idx] = merged
+  setLeads(next)
+  return { lead: merged, leads: next }
 }
 
 // True when a business (Discovery shape) is already saved — for the saved-state icon.

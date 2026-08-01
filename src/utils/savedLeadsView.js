@@ -6,14 +6,28 @@ import {
   auditStatusOf, websiteStatusOf, phoneStatusOf, emailStatusOf, hasCompletedAudit, isAuditEligible,
 } from './leadStatus.js'
 import { domainKey } from './leadIdentity.js'
+import { isProfileResearchEligible, effectivePriorityScore, effectivePriorityTier } from './profileResearch.js'
+import { RESEARCH_STATUS } from '../config/profileResearch.js'
 
-export const SECTIONS = Object.freeze({ NEEDS_REVIEW: 'needs_review', AUDITED: 'audited', ALL: 'all' })
+export const SECTIONS = Object.freeze({
+  NEEDS_REVIEW: 'needs_review', AUDITED: 'audited', PROFILE_RESEARCHED: 'profile_researched', ALL: 'all',
+})
 
-// Needs Review = saved but no completed audit record (incl. no-website leads awaiting
-// future Business Profile Research). Audited = a completed audit record exists (even
-// blocked/failed). A no-website lead is NOT a "failed audit".
+// A completed Business Profile Research result exists for a no-website lead (15C3).
+const RESEARCH_DONE = new Set([RESEARCH_STATUS.RESEARCHED, RESEARCH_STATUS.PARTIAL, RESEARCH_STATUS.UNABLE])
+export function hasCompletedResearch(lead) {
+  return isProfileResearchEligible(lead) && RESEARCH_DONE.has(lead?.profileResearchStatus)
+}
+
+// Section routing (15C3):
+//  - Profile Researched = a no-website lead with a completed Profile Research result.
+//  - Website Audited     = a website lead with a completed Website Audit record.
+//  - Needs Review        = everything else (unaudited website + un-researched no-website).
+// A no-website lead is never placed under "Website Audited" language.
 export function sectionOf(lead) {
-  return hasCompletedAudit(lead) ? SECTIONS.AUDITED : SECTIONS.NEEDS_REVIEW
+  if (hasCompletedResearch(lead)) return SECTIONS.PROFILE_RESEARCHED
+  if (hasCompletedAudit(lead)) return SECTIONS.AUDITED
+  return SECTIONS.NEEDS_REVIEW
 }
 
 export const DEFAULT_HUB_FILTERS = Object.freeze({
@@ -43,7 +57,7 @@ function passPhoneFilter(lead, v) {
 function passEmailFilter(lead, v) { return v === 'all' || emailStatusOf(lead) === v }
 function passTierFilter(lead, v) {
   if (v === 'all') return true
-  return (lead.clientOpportunityTier ?? lead.qualificationTier) === v
+  return effectivePriorityTier(lead) === v
 }
 function passSearch(lead, q) {
   if (!q) return true
@@ -72,6 +86,7 @@ export function applyHubView(leads, { section = SECTIONS.ALL, filters = DEFAULT_
     all: list.length,
     needs_review: list.filter(l => sectionOf(l) === SECTIONS.NEEDS_REVIEW).length,
     audited: list.filter(l => sectionOf(l) === SECTIONS.AUDITED).length,
+    profile_researched: list.filter(l => sectionOf(l) === SECTIONS.PROFILE_RESEARCHED).length,
   }
   return { visible, counts }
 }
@@ -90,7 +105,7 @@ const savedTime = l => { const t = Date.parse(l?.savedAt ?? l?.dateSaved ?? '');
 
 function tieBreak(a, b) {
   return (
-    cmpNum(num(a.clientOpportunityScore), num(b.clientOpportunityScore), 'desc') ||
+    cmpNum(num(effectivePriorityScore(a)), num(effectivePriorityScore(b)), 'desc') ||
     cmpNum(num(a.qualificationScore), num(b.qualificationScore), 'desc') ||
     cmpNum(num(a.websiteOpportunityScore), num(b.websiteOpportunityScore), 'desc') ||
     cmpNum(num(a.reviewCount), num(b.reviewCount), 'desc') ||
@@ -102,8 +117,10 @@ function tieBreak(a, b) {
 export function sortSavedLeads(leads, mode = 'client_desc') {
   const wrapped = (Array.isArray(leads) ? leads : []).map((l, __i) => ({ ...l, __i }))
   const primary = {
-    client_desc: (a, b) => cmpNum(num(a.clientOpportunityScore), num(b.clientOpportunityScore), 'desc'),
-    client_asc: (a, b) => cmpNum(num(a.clientOpportunityScore), num(b.clientOpportunityScore), 'asc'),
+    // "Client score" now uses the effective priority — the combined No-Website Priority
+    // for researched no-website leads, else Client Opportunity, else Qualification.
+    client_desc: (a, b) => cmpNum(num(effectivePriorityScore(a)), num(effectivePriorityScore(b)), 'desc'),
+    client_asc: (a, b) => cmpNum(num(effectivePriorityScore(a)), num(effectivePriorityScore(b)), 'asc'),
     qual_desc: (a, b) => cmpNum(num(a.qualificationScore), num(b.qualificationScore), 'desc'),
     website_desc: (a, b) => cmpNum(num(a.websiteOpportunityScore), num(b.websiteOpportunityScore), 'desc'),
     reviews_desc: (a, b) => cmpNum(num(a.reviewCount), num(b.reviewCount), 'desc'),

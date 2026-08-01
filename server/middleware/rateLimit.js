@@ -26,3 +26,4 @@ export const auditLimiter = makeLimiter(30, 'RATE_LIMIT_AUDIT')          // sing
 export const bulkAuditLimiter = makeLimiter(10, 'RATE_LIMIT_BULK')       // fans out to many sites
 export const discoverLimiter = makeLimiter(20, 'RATE_LIMIT_DISCOVER')    // billable (Google)
 export const outreachLimiter = makeLimiter(15, 'RATE_LIMIT_OUTREACH')    // billable (Anthropic)
+export const profileDetailsLimiter = makeLimiter(15, 'RATE_LIMIT_PROFILE') // billable (Google Place Details)

@@ -61,7 +61,8 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
   const [confirm, setConfirm] = useState(null) // { message, onConfirm }
   const [bulkFollowUpDate, setBulkFollowUpDate] = useState('')
   const mounted = useRef(true)
-  useEffect(() => () => { mounted.current = false }, [])
+  // Re-set true on remount (StrictMode double-invokes effects); false only on unmount.
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   // Persist transient view controls (never regenerates drafts / re-sends on refresh).
   useEffect(() => {

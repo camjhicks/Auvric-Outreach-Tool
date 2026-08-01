@@ -22,8 +22,17 @@ const SALES_ANGLE_TO_EMAIL = {
   insufficient_evidence: 'insufficient_evidence',
 }
 
+// No-website sales angles (Milestone 15C3) all map to the email engine's no-main-website mode.
+const NO_WEBSITE_ANGLES = new Set([
+  'active_no_central_site', 'maps_and_phone_reliance', 'trust_not_organized',
+  'no_online_path', 'demand_without_site', 'services_not_explained', 'no_website',
+])
+
 function emailAngleFor(lead) {
   const l = lead ?? {}
+  // A no-website lead is never framed as a website problem.
+  if (l.hasWebsite === false || (!l.websiteUrl && l.hasWebsite !== true)) return 'no_main_website'
+  if (NO_WEBSITE_ANGLES.has(l.primarySalesAngle)) return 'no_main_website'
   if (l.siteAvailabilityStatus === 'unavailable' || l.siteAvailabilityStatus === 'timed_out') return 'website_unavailable'
   if (l.siteAvailabilityStatus === 'blocked' || l.auditStatus === 'audit_blocked') return 'website_audit_blocked'
   const mapped = SALES_ANGLE_TO_EMAIL[l.primarySalesAngle]

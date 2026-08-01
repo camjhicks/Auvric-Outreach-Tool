@@ -14,6 +14,9 @@ function subjectFor(ev) {
 // One verified opening observation, only from available facts.
 function opening(ev) {
   if (ev.canCiteReviews) return `I came across ${ev.businessName} and saw you've built up ${ev.reviewCount} reviews`
+  // No main website (Milestone 15C3): never imply we "looked at the website".
+  if (ev.hasWebsite === false || ev.primaryPainAngle === 'no_main_website')
+    return ev.city ? `I came across ${ev.businessName} on Google in ${ev.city}` : `I came across ${ev.businessName} on Google`
   if (ev.websiteAvailability === 'unavailable' || ev.primaryPainAngle === 'website_unavailable')
     return `I was looking at the website for ${ev.businessName}`
   if (ev.city) return `I came across ${ev.businessName} in ${ev.city}`

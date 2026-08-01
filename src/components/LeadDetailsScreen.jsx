@@ -5,6 +5,8 @@ import ClientOpportunitySection from './ClientOpportunitySection'
 import SalesApproachSection from './SalesApproachSection'
 import WebsiteOpportunitySection from './WebsiteOpportunitySection'
 import LeadEmailOutreachSection from './LeadEmailOutreachSection'
+import LeadProfileResearchSection from './LeadProfileResearchSection'
+import { isProfileResearchEligible } from '../utils/profileResearch'
 import ExternalLink from './ExternalLink'
 import {
   websiteStatusOf, auditStatusOf, phoneStatusOf, emailStatusOf, computeEligibility,
@@ -43,7 +45,7 @@ function InfoRow({ label, children }) {
 
 export default function LeadDetailsScreen({
   lead, onBack, onNotesChange, onOutreachSave,
-  queueRecord = null, onAddToQueue, onQueueChange, onOpenEmailQueue,
+  queueRecord = null, onAddToQueue, onQueueChange, onOpenEmailQueue, onOpenProfileResearch,
 }) {
   const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
   const [outreachDirty, setOutreachDirty] = useState(false)
@@ -81,6 +83,7 @@ export default function LeadDetailsScreen({
 
   const website = websiteStatusOf(lead)
   const eligibility = computeEligibility(lead)
+  const noWebsite = isProfileResearchEligible(lead)
 
   return (
     <div className={styles.screen}>
@@ -193,6 +196,15 @@ export default function LeadDetailsScreen({
             </>
           )}
         </Section>
+
+        {noWebsite && (
+          <Section title="Business Profile Research">
+            <LeadProfileResearchSection
+              lead={lead}
+              onResearch={onOpenProfileResearch}
+            />
+          </Section>
+        )}
 
         <Section title="Email Outreach">
           <LeadEmailOutreachSection

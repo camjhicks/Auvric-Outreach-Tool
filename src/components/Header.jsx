@@ -1,7 +1,7 @@
 import styles from './Header.module.css'
 
-export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQueue, onViewBulk, onViewDiscovery, onResetSession }) {
-  const hasNav = onViewLeads || onViewQueue || onViewEmailQueue || onViewBulk || onViewDiscovery
+export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQueue, onViewProfileResearch, onViewBulk, onViewDiscovery, onResetSession }) {
+  const hasNav = onViewLeads || onViewQueue || onViewEmailQueue || onViewProfileResearch || onViewBulk || onViewDiscovery
   return (
     <header className={styles.header}>
       {onHome ? (
@@ -23,6 +23,9 @@ export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQu
           )}
           {onViewEmailQueue && (
             <button className={styles.navBtn} onClick={onViewEmailQueue}>Email Queue</button>
+          )}
+          {onViewProfileResearch && (
+            <button className={styles.navBtn} onClick={onViewProfileResearch}>Profile Research</button>
           )}
           {onViewQueue && (
             <button className={styles.navBtn} onClick={onViewQueue}>Follow-Up Queue</button>

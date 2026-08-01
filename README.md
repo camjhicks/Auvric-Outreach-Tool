@@ -966,10 +966,119 @@ defined as the future seam a Gmail/SMTP integration would implement behind the s
 interface. **No Gmail, OAuth, SMTP, webhook, or background sending exists**, and Scout never
 claims an email was delivered.
 
-**Next milestone:** **15C3 — Business Profile Research for No-Website Leads.** Later planned
-work (not built here): Business Profile Research · Call Queue · automatic routing · a
-completed-outreach dashboard · advertisement lead intake · real database migration · the
-final Auvric Digital redesign.
+**Next milestone:** **15C3 — Business Profile Research for No-Website Leads** (below).
+
+## Business Profile Research (Milestone 15C3)
+
+Businesses with **no website** can be discovered and saved but cannot receive a Website
+Audit. Business Profile Research is a separate, evidence-based workflow that researches
+those leads from approved public Google Business Profile data so Cameron can judge whether
+they are worth contacting — **it never pretends to be a Website Audit.**
+
+**Website Audit vs. Profile Research.** A *Website Audit* loads and analyzes a business's
+website (site health, booking/contact detection, on-page evidence). *Profile Research* runs
+only for leads with no valid website and uses public Google Places data — it never loads a
+site and **never scrapes the Google Maps web page** (approved Places API only).
+
+**Route + navigation.** A stable `/profile-research` route (in the top nav) with direct
+entry, refresh, and Back/Forward support. Filters, sort, selection, batch settings, and
+research state persist through the session; a refresh never re-runs research automatically,
+and Reset Workspace never deletes permanent research results.
+
+**Eligibility.** Only leads with no website / empty website / unknown-with-no-valid-URL are
+eligible; website leads keep using Website Audit and are excluded (with a reason). A
+no-website lead is never pushed into Website Audit, the saved website status can be manually
+corrected, research references the permanent Saved Lead id, and re-running research updates
+the same record (no duplicates).
+
+**Approved data sources.** Business name, Place ID, address, city/state, phone, rating,
+review count, business status, category, Maps link, discovery/saved dates — plus, only when
+the user opts into a deeper pass, a small set of reviews and opening hours via the approved
+Place Details API. The raw Google response is never stored; only compact normalized findings
+are kept. Review analysis is always disclosed as **based only on the limited reviews
+available through the approved API — not full coverage.**
+
+**Activity model.** `businessActivityStatus` is one of active (high confidence) · likely
+active · activity unclear · temporarily closed · permanently closed · unable to verify, with
+evidence + confidence. Permanently closed is clearly marked and disqualified; temporarily
+closed is never treated as permanent; rating and review count alone do not prove current
+activity; a recent review supports likely activity; **no recent visible review never proves
+inactivity.**
+
+**Years-in-business safety.** Scout never claims an official founding date or "X years in
+business." It stores the **earliest/latest observed review date and the observed span**, and
+only ever says *"the limited reviews available go back to …"* / *"observed review history
+spanning about …"* — observed review history is **never** converted into official company
+age.
+
+**Review themes.** From the limited samples, Scout summarizes positive and friction themes
+(professionalism, responsiveness, quality, communication, scheduling difficulty, missed
+calls, slow response, quote/estimate process, …). A theme is only called **repeated** when
+multiple available reviews support it; a single review is never generalized; snippets are
+short and capped; nothing is presented as complete coverage and no theme is invented.
+
+**Contact path.** `currentContactPathStatus` is phone only · phone + Maps · phone + social
+reference · Maps listing only · no public contact found · unable to verify. Scout never says
+customers cannot reach a business when a phone is present, a Maps listing is never called a
+website, a social profile is never assumed without verification, and a phone-only flow is
+framed as a **convenience opportunity, not a broken business**. Unknown stays distinct from
+absent.
+
+**No-Website Outreach Score (0–100).** A separate deterministic score — **not** the Website
+Opportunity Score. Positive signals (active/likely-active, valid phone, review volume, strong
+rating, repeated praise, review friction themes, service-business fit, local context) and
+risk reductions (temporarily/permanently closed, chain risk, no phone, weak identity). Every
+contribution is explained; **no points are awarded merely for lacking a website**, so a dead
+listing never ranks highly; permanently closed is disqualified; low-confidence research is
+capped at Review Manually. Tiers: Call First 80–100 · High Priority 65–79 · Qualified 50–64 ·
+Review Manually 35–49 · Low Priority 0–34 · Disqualified.
+
+**Combined No-Website Priority.** A documented deterministic blend of **45% Discovery
+Qualification + 55% No-Website Outreach Score** (never any Website Opportunity contribution).
+It shows both contributing scores, is marked *provisional* when Discovery metadata is
+missing, uses the same tier names as Client Opportunity, and drives Saved-Leads sorting for
+researched no-website leads — without implying a website audit occurred.
+
+**Notes + Sales Reasoning.** Every completed result has a non-empty summary, notes,
+strengths, opportunities, limitations, a primary finding, a primary outreach reason, and a
+recommended angle. Weaknesses are never invented; a strong no-website business is framed as
+established visible demand without a central owned web presence. Sales Reasoning is extended
+for no-website leads (angles like *active business without a central website*, *customers
+rely on Maps and phone*, *reviews/trust not organized on an owned site*, *no clear online
+quote/booking path*) — it says **"no main website was listed," never "you have no online
+presence,"** never invents years or services, and stays cautious when evidence is limited.
+
+**Outreach email.** The existing 15B3/15B4 engine is extended (not duplicated) with a
+no-main-website mode: it opens with a verified observation, notes no main website was listed,
+frames the opportunity respectfully, transitions into a custom Auvric Digital website with
+relevant features and a free mockup, and never claims certifications, financing, guarantees,
+specific services, or years the business hasn't verified. AI-assisted + deterministic
+fallback and evidence validation are preserved, and researched leads can be added to the
+Email Queue. **Nothing is sent automatically.**
+
+**Saved Leads integration.** No-website leads show Profile Research status, No-Website
+Outreach Score, no-website priority tier, activity, and phone/email status. Saved Leads
+sections are now **Needs Review · Website Audited · Profile Researched · All Leads** —
+researched no-website leads appear under Profile Researched, never under "Website Audited."
+The detail view adds Business Profile Research (activity, review themes, contact path, both
+scores, notes) and clearly states *"Website Audit is not applicable because no valid website
+is currently listed,"* rather than showing an empty failed-audit panel.
+
+**Batching + API usage.** Basic research uses saved data only and makes **no** Google call.
+An optional per-batch "fetch reviews & hours" pass is the only billable step (Place Details,
+incl. the more expensive reviews field) and is user-selected, sequential, capped by a batch
+limit (default 10, hard max 20), never automatic, and never duplicated per Place ID. Deep
+research is the researcher's choice to control usage.
+
+**Interruption + persistence.** A research batch interrupted by a refresh is surfaced as
+*interrupted* with a manual Retry — never auto-restarted; completed items in a partial batch
+are preserved; deleted Saved Lead references recover safely; storage failures degrade
+gracefully; external Maps links open in a new tab; and no raw provider response or API key is
+ever exposed or persisted.
+
+**Next milestone:** **15C4 — Call Queue and Manual Call Workflow.** Later planned work (not
+built here): Call Queue · automatic routing · a completed-outreach dashboard · advertisement
+lead intake · real database migration · the final Auvric Digital redesign.
 
 ## Local setup
 

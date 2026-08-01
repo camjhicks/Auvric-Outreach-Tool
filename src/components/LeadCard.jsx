@@ -5,6 +5,8 @@ import {
   websiteStatusOf, auditStatusOf, phoneStatusOf, emailStatusOf, hasCompletedAudit, isAuditEligible,
   WEBSITE_STATUS_LABEL, AUDIT_STATUS_LABEL, PHONE_STATUS_LABEL, EMAIL_STATUS_LABEL,
 } from '../utils/leadStatus'
+import { isProfileResearchEligible } from '../utils/profileResearch'
+import { RESEARCH_STATUS_LABEL } from '../config/profileResearch'
 import styles from './LeadCard.module.css'
 
 function getDomain(url) {
@@ -17,14 +19,28 @@ function StatusChips({ lead }) {
   const audit = auditStatusOf(lead)
   const phone = phoneStatusOf(lead)
   const email = emailStatusOf(lead)
+  const noWebsite = isProfileResearchEligible(lead)
+  const researched = noWebsite && !!lead.profileResearchStatus && lead.profileResearchStatus !== 'not_researched'
   return (
     <div className={styles.chips}>
       <span className={`${styles.chip} ${website === 'has' ? styles.chipPos : styles.chipMuted}`}>
         {WEBSITE_STATUS_LABEL[website] ?? 'Website unknown'}
       </span>
-      <span className={`${styles.chip} ${hasCompletedAudit(lead) ? styles.chipPos : styles.chipMuted}`}>
-        {AUDIT_STATUS_LABEL[audit] ?? 'Not audited'}
-      </span>
+      {/* No-website leads show Profile Research status instead of "audit" language. */}
+      {noWebsite ? (
+        <>
+          <span className={`${styles.chip} ${researched ? styles.chipPos : styles.chipMuted}`}>
+            {RESEARCH_STATUS_LABEL[lead.profileResearchStatus] ?? 'Not researched'}
+          </span>
+          {typeof lead.noWebsiteOutreachScore === 'number' && (
+            <span className={styles.chip}>No-Website Score {lead.noWebsiteOutreachScore}</span>
+          )}
+        </>
+      ) : (
+        <span className={`${styles.chip} ${hasCompletedAudit(lead) ? styles.chipPos : styles.chipMuted}`}>
+          {AUDIT_STATUS_LABEL[audit] ?? 'Not audited'}
+        </span>
+      )}
       <span className={`${styles.chip} ${phone === 'found' ? styles.chipPos : styles.chipMuted}`}>
         {PHONE_STATUS_LABEL[phone] ?? 'Phone unknown'}
       </span>
@@ -57,7 +73,7 @@ const CONTACTED_AND_BEYOND = new Set([
 
 export default function LeadCard({
   lead, onStatusChange, onNotesChange, onDelete, onViewDetails,
-  selectable = false, selected = false, onToggleSelect, onAudit,
+  selectable = false, selected = false, onToggleSelect, onAudit, onResearchProfile,
   onAddToEmailQueue, queued = false, onOpenEmailQueue,
 }) {
   const [showNotes, setShowNotes] = useState(false)
@@ -84,6 +100,8 @@ export default function LeadCard({
   const domain = getDomain(lead.websiteUrl)
   const titleText = domain || lead.businessName || 'Lead (no website)'
   const auditEligible = isAuditEligible(lead)
+  const researchEligible = !auditEligible && isProfileResearchEligible(lead)
+  const researched = !!lead.profileResearchStatus && lead.profileResearchStatus !== 'not_researched'
   const canMarkContacted = !CONTACTED_AND_BEYOND.has(lead.status)
   const dateLabel = new Date(lead.dateSaved).toLocaleDateString(
     undefined, { month: 'short', day: 'numeric', year: 'numeric' }
@@ -144,6 +162,11 @@ export default function LeadCard({
           {auditEligible && onAudit && (
             <button className={styles.auditBtn} onClick={() => onAudit(lead.id)}>
               {hasCompletedAudit(lead) ? 'Re-audit' : 'Audit'}
+            </button>
+          )}
+          {researchEligible && onResearchProfile && (
+            <button className={styles.researchBtn} onClick={() => onResearchProfile(lead.id)}>
+              {researched ? 'Re-research' : 'Research profile'}
             </button>
           )}
           {onAddToEmailQueue && (

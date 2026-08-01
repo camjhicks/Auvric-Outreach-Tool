@@ -14,7 +14,8 @@ import styles from './SavedLeadsScreen.module.css'
 
 const SECTION_TABS = [
   { key: SECTIONS.NEEDS_REVIEW, label: 'Needs Review', countKey: 'needs_review' },
-  { key: SECTIONS.AUDITED, label: 'Audited', countKey: 'audited' },
+  { key: SECTIONS.AUDITED, label: 'Website Audited', countKey: 'audited' },
+  { key: SECTIONS.PROFILE_RESEARCHED, label: 'Profile Researched', countKey: 'profile_researched' },
   { key: SECTIONS.ALL, label: 'All Leads', countKey: 'all' },
 ]
 const SECTION_KEYS = SECTION_TABS.map(t => t.key)
@@ -69,6 +70,7 @@ const EMAIL_FILTER_OPTIONS = [
 export default function SavedLeadsScreen({
   leads, onBack, onLeadsChange, selectedLeadId = null, onOpenLead, onCloseLead, onSendToBulk,
   emailQueue = [], onAddToEmailQueue, onAddManyToEmailQueue, onQueueChange, onOpenEmailQueue,
+  onOpenProfileResearch,
 }) {
   const restored = getSlice('savedLeads') ?? {}
   // Default to All Leads so a lead is always visible right after saving, whatever its
@@ -233,6 +235,7 @@ export default function SavedLeadsScreen({
         onAddToQueue={() => onAddToEmailQueue && onAddToEmailQueue(selectedLead)}
         onQueueChange={onQueueChange}
         onOpenEmailQueue={onOpenEmailQueue}
+        onOpenProfileResearch={onOpenProfileResearch}
       />
     )
   }
@@ -421,6 +424,7 @@ export default function SavedLeadsScreen({
               selected={selected.has(lead.id)}
               onToggleSelect={toggleSelect}
               onAudit={onSendToBulk ? handleAuditOne : undefined}
+              onResearchProfile={onOpenProfileResearch ? () => onOpenProfileResearch() : undefined}
               onAddToEmailQueue={onAddToEmailQueue ? handleAddOneToQueue : undefined}
               queued={queuedIds.has(lead.id)}
               onOpenEmailQueue={onOpenEmailQueue}
