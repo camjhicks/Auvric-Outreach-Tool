@@ -8,6 +8,88 @@ outreach drafts, and manage a lightweight CRM.
 > metadata) lives in your **browser's localStorage** — see
 > [Data & persistence](#data--persistence) before relying on it.
 
+## Scout V1 — release (Milestone 15C4)
+
+Scout V1 is the revenue-ready release: the full workflow validated and deployed for
+real outreach.
+
+- **Live branch:** `claude/auvric-scout-foundation-4pv2u4` (Render's deploy branch)
+- **Deployed commit:** `570baac` (fast-forwarded from the release candidate; the live
+  branch's history is unchanged, only advanced)
+- **Render URL:** https://auvric-scout.onrender.com
+- **Rollback reference:** `backup/pre-scout-v1-release` → `5875b86` (the previous live
+  commit; see [Release rollback](#release-rollback))
+
+**V1 revenue-ready capabilities:** Lead Discovery with flexible search defaults ·
+Discovery Qualification Score · direct saving from Discovery · Saved Leads Hub with
+stable identity/dedup · Website Audit + site-health, booking/quote/contact/service-request
+detection · Website Opportunity, Client Opportunity, and Personalized Sales Reasoning ·
+reliable AI outreach emails with deterministic fallback · Email Outreach Queue with
+follow-ups, manual sent/outcome tracking, and do-not-contact protection · Business Profile
+Research for no-website leads (No-Website Outreach Score + combined no-website priority) ·
+route and session persistence.
+
+**Environment variables** (server-side only; names, never values — see
+[`.env.example`](.env.example)): `GOOGLE_PLACES_API_KEY` (Lead Discovery + the optional
+Profile Research details pass), `ANTHROPIC_API_KEY` (AI outreach drafts), and optional
+`NODE_ENV=production`. **No key is ever exposed to the frontend, logged, or committed.**
+Missing keys degrade safely: discovery/details return HTTP 503, and outreach always falls
+back to the deterministic email builder.
+
+**Permanent storage** lives in the browser's `localStorage` (`auvric_leads`,
+`auvric_email_queue`); transient workspace state lives in `sessionStorage`
+(`auvric_scout_session`). The V1 release is **backward compatible** — older Saved Leads
+migrate lazily with safe defaults, the Email Queue and Profile Research namespaces
+initialize empty, malformed data degrades gracefully, and **Reset Workspace never deletes
+permanent records**.
+
+**Manual email workflow:** **Scout never sends email automatically.** It drafts a
+personalized email you copy and send yourself; "Mark as Sent" only records your manual
+action. There is no Gmail, SMTP, OAuth, or webhook integration.
+
+**Business Profile Research** (no-website leads) uses only approved public Google Business
+Profile data — it never scrapes Google Maps pages, never runs a website audit, and never
+claims an official founding date. Basic research needs no paid API call; the optional
+"fetch reviews & hours" pass is the only billable Profile Research step and is
+user-selected.
+
+**API-usage considerations:** billable external calls (Google Places search, website
+audits, the optional Profile Research details pass, Anthropic drafts) run **only on an
+explicit user action** — none auto-fire on load or after a refresh. Rate limits, SSRF
+protection, and redirect validation remain active.
+
+**Known limitations:** permanent data is per-browser `localStorage` (no server database
+yet); deep review-theme analysis needs the optional billable details pass; deliverability
+is never verified or claimed.
+
+**Next recommended work:** begin real outreach and collect usage feedback. Later optional
+work (not built): Call Queue · automatic routing · real database migration · advertisement
+lead intake · completed-outreach analytics · the final Auvric Digital visual redesign ·
+Base44 evaluation after the first sale.
+
+### Release rollback
+
+The exact pre-release live commit is preserved on the branch
+`backup/pre-scout-v1-release` (commit `5875b86`). Roll back **only if deployment
+validation fails**.
+
+- **Preferred (no git rewrite):** in the Render dashboard, open the service's deploy
+  history and **Redeploy / Rollback to the pre-release deploy** (the one built from
+  `5875b86`). This restores the previous version without touching git history.
+- **Git rewind (deliberate):** pointing the live branch back to `5875b86` rewinds
+  history and is therefore a non-fast-forward, so it requires an explicit
+  `--force-with-lease` and should only be done intentionally:
+
+  ```bash
+  git fetch origin
+  git push --force-with-lease=claude/auvric-scout-foundation-4pv2u4 \
+    origin backup/pre-scout-v1-release:claude/auvric-scout-foundation-4pv2u4
+  ```
+
+After either method, Render redeploys and you confirm `/api/health` and the root page
+recover. The `backup/pre-scout-v1-release` branch is never deleted, so the pre-release
+commit stays recoverable regardless.
+
 ## Lead Discovery — universal niches
 
 Lead Discovery is **niche-agnostic**. You pick a niche (or enter a custom search),
