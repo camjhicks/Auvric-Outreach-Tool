@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import EmailDraftPanel from './EmailDraftPanel'
+import OutreachHistorySection from './OutreachHistorySection'
 import {
   EMAIL_STATUS_LABEL, OUTCOME, OUTCOME_LABEL, followUpState, sectionOfQueue,
   validateEmailAddress, SECTION,
@@ -22,7 +23,7 @@ function todayInputValue(iso) {
 }
 
 export default function EmailQueueCard({
-  item, selected, onToggleSelect, expanded, onToggleExpand,
+  item, outreach = null, selected, onToggleSelect, expanded, onToggleExpand,
   busy = false, onOpenLead, onGenerate, onSetEmail, onRemoveEmail, onMarkSent,
   onReschedule, onRecordOutcome, onRemoveFromQueue, onClearDoNotContact,
 }) {
@@ -108,6 +109,9 @@ export default function EmailQueueCard({
 
       {expanded && (
         <div className={styles.expand}>
+          {/* Permanent outreach history (authoritative ledger) */}
+          {outreach && <OutreachHistorySection status={outreach.status} timeline={outreach.timeline} compact />}
+
           {/* Email address entry / correction */}
           <form className={styles.emailForm} onSubmit={submitEmail}>
             <label className={styles.emailLabel}>{hasValidEmail ? 'Correct email' : 'Add email'}</label>

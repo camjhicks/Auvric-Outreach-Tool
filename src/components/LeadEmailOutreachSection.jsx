@@ -1,12 +1,17 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import EmailDraftPanel from './EmailDraftPanel'
+import OutreachHistorySection from './OutreachHistorySection'
+import DuplicateSendModal from './DuplicateSendModal'
 import {
   sectionOfQueue, followUpState, validateEmailAddress, deriveEmailFromLead,
   EMAIL_STATUS_LABEL, OUTCOME, OUTCOME_LABEL, SECTION,
 } from '../utils/emailQueueModel'
 import {
-  saveDraft, recordManualSend, recordOutcome, removeFromQueue, setEmail, clearDoNotContact,
+  saveDraft, recordManualSend, recordOutcome, removeFromQueue, setEmail, clearDoNotContact, recordSendOverride,
 } from '../services/emailQueueStorage'
+import { getOutreachSummaryForLead, evaluatePreSendForLead } from '../services/outreachHistoryStorage'
+import { actionForStage } from '../services/outreachRecorder'
+import { DECISION } from '../utils/outreachRules'
 import { generateDraft } from '../services/outreachProvider'
 import { formatDate } from '../utils/followUp'
 import styles from './LeadEmailOutreachSection.module.css'
@@ -25,11 +30,19 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
   const [showSent, setShowSent] = useState(false)
   const [emailInput, setEmailInput] = useState('')
   const [sentDate, setSentDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [dupModal, setDupModal] = useState(null)
+  const [ledgerVersion, setLedgerVersion] = useState(0)
   const mounted = useRef(true)
   // Re-set true on remount (StrictMode double-invokes effects); false only on unmount.
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   const derived = deriveEmailFromLead(lead)
+  // Authoritative outreach history for this business (persists even when not queued).
+  // Recomputes when the queue record changes or a ledger-only override lands.
+  const summary = useMemo(
+    () => (lead ? getOutreachSummaryForLead(lead, { recipientEmail: record?.emailAddress ?? null }) : null),
+    [lead, record, ledgerVersion],
+  )
 
   if (!record) {
     return (
@@ -40,6 +53,9 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
             ? <>A public email was found: <strong>{derived.emailAddress}</strong>.</>
             : EMAIL_STATUS_LABEL[derived.emailStatus] ?? 'Email status unknown.'}
         </p>
+        {summary && summary.status.eventCount > 0 && (
+          <OutreachHistorySection status={summary.status} timeline={summary.timeline} compact />
+        )}
         <button className={styles.primaryBtn} onClick={onAddToQueue}>Add to Email Queue</button>
       </div>
     )
@@ -57,19 +73,37 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
     setBusy(true)
     try {
       const draft = await generateDraft(lead, { stage: kind })
-      commit(saveDraft(r.savedLeadId, draft, { followUp: kind !== 'initial' }))
+      commit(saveDraft(r.savedLeadId, draft, { followUp: kind !== 'initial', lead }))
     } catch { /* engine always returns a draft; ignore transient error */ }
     finally { if (mounted.current) setBusy(false) }
   }
   function submitEmail(e) {
     e?.preventDefault()
     if (!validateEmailAddress(emailInput).valid) return
-    commit(setEmail(r.savedLeadId, emailInput)); setEmailInput('')
+    commit(setEmail(r.savedLeadId, emailInput, { lead })); setEmailInput('')
+  }
+  function doRecordSend(iso) {
+    commit(recordManualSend(r.savedLeadId, { lead, ...(iso ? { at: iso } : {}) }))
+    setShowSent(false)
   }
   function confirmSent() {
     const iso = sentDate ? new Date(`${sentDate}T12:00:00`).toISOString() : undefined
-    commit(recordManualSend(r.savedLeadId, iso ? { at: iso } : {}))
+    // The INTENDED stage is defined by this queue record (what the user sees), then
+    // validated against the business's global ledger memory (cross-lead protection).
+    const stage = r.initialEmailSentAt ? ((r.followUpStage || 0) >= 2 ? 2 : 1) : 0
+    const evaluation = evaluatePreSendForLead(lead, actionForStage(stage), { recipientEmail: r.emailAddress })
+    if (evaluation.decision === DECISION.ALLOWED || evaluation.decision === DECISION.WARNING) {
+      doRecordSend(iso)
+      return
+    }
+    setDupModal({ evaluation: { ...evaluation, status: summary.status }, timeline: summary.timeline, stage })
     setShowSent(false)
+  }
+  function onOverrideSend(reason) {
+    if (!dupModal) return
+    recordSendOverride(lead, { stage: dupModal.stage ?? 0, recipientEmail: r.emailAddress, overrideReason: reason })
+    setLedgerVersion(v => v + 1)
+    setDupModal(null)
   }
 
   return (
@@ -79,6 +113,8 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
         {r.emailDoNotContact && <span className={styles.dncPill}>Do not contact</span>}
         {onOpenEmailQueue && <button className={styles.linkBtn} onClick={onOpenEmailQueue}>Open in Email Queue →</button>}
       </div>
+
+      {summary && <OutreachHistorySection status={summary.status} timeline={summary.timeline} compact />}
 
       <div className={styles.metaGrid}>
         <div><span className={styles.metaLabel}>Email</span><span>{hasValidEmail ? r.emailAddress : (EMAIL_STATUS_LABEL[r.emailStatus] ?? '—')}</span></div>
@@ -135,7 +171,7 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
         <span className={styles.metaLabel}>Record outcome</span>
         <div className={styles.outcomeBtns}>
           {QUICK_OUTCOMES.map(o => (
-            <button key={o} className={styles.smallBtn} onClick={() => commit(recordOutcome(r.savedLeadId, o, o === OUTCOME.DO_NOT_CONTACT ? { reason: 'Marked do not contact' } : {}))}>
+            <button key={o} className={styles.smallBtn} onClick={() => commit(recordOutcome(r.savedLeadId, o, o === OUTCOME.DO_NOT_CONTACT ? { lead, reason: 'Marked do not contact' } : { lead }))}>
               {OUTCOME_LABEL[o]}
             </button>
           ))}
@@ -143,6 +179,16 @@ export default function LeadEmailOutreachSection({ lead, record, onAddToQueue, o
       </div>
 
       <button className={styles.removeBtn} onClick={() => commit(removeFromQueue(r.savedLeadId))}>Remove from Email Queue</button>
+
+      {dupModal && (
+        <DuplicateSendModal
+          businessName={lead?.businessName}
+          evaluation={dupModal.evaluation}
+          timeline={dupModal.timeline}
+          onOverride={onOverrideSend}
+          onCancel={() => setDupModal(null)}
+        />
+      )}
     </div>
   )
 }

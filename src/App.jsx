@@ -29,6 +29,7 @@ import {
   incrementLeadsGenerated,
 } from './services/leadStorage'
 import { getQueue, addToQueue, addManyToQueue, reconcileWithLeads } from './services/emailQueueStorage'
+import { migrateFromEmailQueue } from './services/outreachHistoryStorage'
 import styles from './App.module.css'
 
 export default function App() {
@@ -71,6 +72,14 @@ export default function App() {
     const { removedCount, queue } = reconcileWithLeads(leads)
     if (removedCount > 0) setEmailQueue(queue)
   }, [leads])
+
+  // One-time legacy backfill (Milestone 15C7): reconstruct permanent Outreach History
+  // events from existing Email Queue records (sent timestamps, follow-up stage, outcomes,
+  // do-not-contact). Idempotent + version-gated — reruns create no duplicates and never
+  // invent a send that was not recorded. Reads a snapshot on mount; never sends anything.
+  useEffect(() => {
+    migrateFromEmailQueue(getQueue(), getLeads())
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = {
     generated: leadsGenerated,

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import EmailQueueCard from './EmailQueueCard'
 import SearchBar from './SearchBar'
 import ConfirmModal from './ConfirmModal'
+import DuplicateSendModal from './DuplicateSendModal'
 import {
   applyQueueView, sortQueue, pruneSelection, partitionForDraft, partitionForSend,
   DEFAULT_QUEUE_FILTERS, MAX_GENERATION_BATCH,
@@ -9,8 +10,13 @@ import {
 import { SECTION, OUTCOME_LABEL, OUTCOME } from '../utils/emailQueueModel'
 import {
   setEmail, clearEmail, saveDraft, recordManualSend, rescheduleFollowUp, recordOutcome,
-  clearDoNotContact, removeFromQueue, removeManyFromQueue, recordManualSendMany,
+  clearDoNotContact, removeFromQueue, removeManyFromQueue, recordManualSendMany, recordSendOverride,
 } from '../services/emailQueueStorage'
+import {
+  getOutreachSummaryForLead, evaluatePreSendForLead, partitionItemsForSend,
+} from '../services/outreachHistoryStorage'
+import { actionForStage } from '../services/outreachRecorder'
+import { DECISION } from '../utils/outreachRules'
 import { generateDraft } from '../services/outreachProvider'
 import { getSlice, setSlice } from '../services/sessionState'
 import styles from './EmailQueueScreen.module.css'
@@ -59,6 +65,8 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
   const [bulkBusy, setBulkBusy] = useState(false)
   const [message, setMessage] = useState(null)
   const [confirm, setConfirm] = useState(null) // { message, onConfirm }
+  const [dupModal, setDupModal] = useState(null) // { id, evaluation, timeline, businessName, onOverride }
+  const [ledgerVersion, setLedgerVersion] = useState(0) // bumps on ledger-only writes (override)
   const [bulkFollowUpDate, setBulkFollowUpDate] = useState('')
   const mounted = useRef(true)
   // Re-set true on remount (StrictMode double-invokes effects); false only on unmount.
@@ -74,6 +82,16 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
     () => (queue ?? []).map(record => ({ record, lead: leadsById.get(record.savedLeadId) ?? null })),
     [queue, leadsById]
   )
+
+  // Derived outreach summaries from the authoritative ledger, per lead. Recomputes when
+  // the queue changes (every mirrored write updates it) or a ledger-only override lands.
+  const outreachById = useMemo(() => {
+    const m = new Map()
+    for (const it of items) {
+      if (it.lead) m.set(it.record.savedLeadId, getOutreachSummaryForLead(it.lead, { recipientEmail: it.record.emailAddress }))
+    }
+    return m
+  }, [items, ledgerVersion])
 
   const { visible, counts } = useMemo(
     () => applyQueueView(items, { section, filters, query }), [items, section, filters, query]
@@ -117,7 +135,7 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
 
   // ---- Single-record handlers (delegate to storage; refresh App queue) ----
   const commit = res => { if (res?.queue) onQueueChange(res.queue) }
-  const onSetEmail = (id, email) => commit(setEmail(id, email))
+  const onSetEmail = (id, email) => commit(setEmail(id, email, { lead: leadsById.get(id) ?? null }))
   const onRemoveEmail = id => commit(clearEmail(id))
   const onReschedule = (id, dateIso) => commit(rescheduleFollowUp(id, dateIso))
   const onRemoveFromQueue = id => commit(removeFromQueue(id))
@@ -126,21 +144,59 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
     confirmLabel: 'Yes, allow contact',
     onConfirm: () => { commit(clearDoNotContact(id)); setConfirm(null) },
   })
-  function onMarkSent(id, iso) {
-    const res = recordManualSend(id, iso ? { at: iso } : {})
+  // Record the send after the pre-send validator has allowed it.
+  function doRecordSend(id, iso) {
+    const lead = leadsById.get(id) ?? null
+    const res = recordManualSend(id, { lead, ...(iso ? { at: iso } : {}) })
     commit(res)
     setMessage(res.changed ? 'Recorded as sent. Scout did not send anything.' : 'Already recorded — nothing sent.')
   }
+  // All "Mark ... Sent" clicks pass through the centralized duplicate-send validator.
+  function onMarkSent(id, iso) {
+    const item = items.find(it => it.record.savedLeadId === id)
+    const lead = leadsById.get(id) ?? null
+    if (!lead || !item) { doRecordSend(id, iso); return }
+    // The INTENDED stage is defined by this queue record (what the user sees), then
+    // validated against the business's global ledger memory (cross-lead protection).
+    const rec = item.record
+    const stage = rec.initialEmailSentAt ? ((rec.followUpStage || 0) >= 2 ? 2 : 1) : 0
+    const evaluation = evaluatePreSendForLead(lead, actionForStage(stage), { recipientEmail: rec.emailAddress })
+    if (evaluation.decision === DECISION.ALLOWED || evaluation.decision === DECISION.WARNING) {
+      doRecordSend(id, iso)
+      return
+    }
+    // Blocked / requires-confirmation → show the duplicate-send dialog with history.
+    const summary = getOutreachSummaryForLead(lead, { recipientEmail: item.record.emailAddress })
+    setDupModal({
+      id,
+      businessName: lead.businessName,
+      evaluation: { ...evaluation, status: summary.status },
+      timeline: summary.timeline,
+      stage: evaluation.stage,
+    })
+  }
+  function onOverrideSend(reason) {
+    if (!dupModal) return
+    const lead = leadsById.get(dupModal.id) ?? null
+    const item = items.find(it => it.record.savedLeadId === dupModal.id)
+    if (lead) {
+      recordSendOverride(lead, { stage: dupModal.stage ?? 0, recipientEmail: item?.record.emailAddress ?? null, overrideReason: reason })
+      setLedgerVersion(v => v + 1)
+      setMessage('Override recorded. The original outreach history was preserved. Scout did not send anything.')
+    }
+    setDupModal(null)
+  }
   function onRecordOutcome(id, outcome) {
+    const lead = leadsById.get(id) ?? null
     if (outcome === OUTCOME.DO_NOT_CONTACT) {
       setConfirm({
         message: 'Mark this lead do not contact? It will be excluded from drafting, follow-ups, and bulk actions.',
         confirmLabel: 'Mark do not contact',
-        onConfirm: () => { commit(recordOutcome(id, outcome, { reason: 'Marked do not contact' })); setConfirm(null) },
+        onConfirm: () => { commit(recordOutcome(id, outcome, { lead, reason: 'Marked do not contact' })); setConfirm(null) },
       })
       return
     }
-    commit(recordOutcome(id, outcome))
+    commit(recordOutcome(id, outcome, { lead }))
   }
 
   async function onGenerate(id, kind) {
@@ -149,7 +205,7 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
     withBusy(id, true)
     try {
       const draft = await generateDraft(lead, { stage: kind })
-      const res = saveDraft(id, draft, { followUp: kind !== 'initial' })
+      const res = saveDraft(id, draft, { followUp: kind !== 'initial', lead })
       commit(res)
     } catch (err) {
       setMessage(err.message ?? 'Could not generate a draft.')
@@ -171,7 +227,7 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
       if (!lead) continue
       try {
         const draft = await generateDraft(lead, { stage: 'initial' })
-        commit(saveDraft(it.record.savedLeadId, draft))
+        commit(saveDraft(it.record.savedLeadId, draft, { lead }))
         ok++
       } catch { fail++ } // a failure preserves other successful drafts
     }
@@ -181,16 +237,24 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
     }
   }
   function bulkMarkSent() {
-    const eligible = sendPart.eligible.map(it => it.record.savedLeadId)
-    if (eligible.length === 0) { setMessage('No eligible leads to mark sent.'); return }
+    // Validate EVERY selected lead through the centralized memory validator (§B11).
+    const selectedItems = [...selected].map(id => items.find(it => it.record.savedLeadId === id)).filter(Boolean)
+    const part = partitionItemsForSend(selectedItems)
+    const eligibleIds = part.eligible.map(e => e.item.record.savedLeadId)
+    if (eligibleIds.length === 0) {
+      setMessage(`No eligible leads to mark sent (${part.blocked.length} blocked${part.warning.length ? `, ${part.warning.length} need review` : ''}). Blocked leads include duplicates and do-not-contact.`)
+      return
+    }
+    const blockedNote = part.blocked.length ? ` ${part.blocked.length} blocked (duplicates / do-not-contact / already sent) will be skipped.` : ''
+    const warnNote = part.warning.length ? ` ${part.warning.length} need individual review and will be skipped.` : ''
     setConfirm({
-      message: `Mark ${eligible.length} lead${eligible.length !== 1 ? 's' : ''} as sent? This records your manual action only — Scout does not send any email.`,
+      message: `Mark ${eligibleIds.length} lead${eligibleIds.length !== 1 ? 's' : ''} as sent?${blockedNote}${warnNote} This records manual sending only. Scout will not send any email.`,
       confirmLabel: 'Yes, record as sent',
       onConfirm: () => {
-        const res = recordManualSendMany(eligible, {})
+        const res = recordManualSendMany(eligibleIds, { leadsById })
         commit(res)
         setConfirm(null)
-        setMessage(`Recorded ${res.sentCount} as sent. Nothing was sent automatically.`)
+        setMessage(`Recorded ${res.sentCount} as sent. ${part.blocked.length} blocked, ${part.warning.length} skipped for review. Nothing was sent automatically.`)
       },
     })
   }
@@ -337,6 +401,7 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
             <EmailQueueCard
               key={it.record.savedLeadId}
               item={it}
+              outreach={outreachById.get(it.record.savedLeadId) ?? null}
               selected={selected.has(it.record.savedLeadId)}
               onToggleSelect={toggleSelect}
               expanded={expanded.has(it.record.savedLeadId)}
@@ -362,6 +427,17 @@ export default function EmailQueueScreen({ leads, queue, onBack, onQueueChange, 
           confirmLabel={confirm.confirmLabel}
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {dupModal && (
+        <DuplicateSendModal
+          businessName={dupModal.businessName}
+          evaluation={dupModal.evaluation}
+          timeline={dupModal.timeline}
+          onOverride={onOverrideSend}
+          onCancel={() => setDupModal(null)}
+          onRecommended={() => { setDupModal(null); setMessage('Use the follow-up controls on the lead to send or schedule a follow-up.') }}
         />
       )}
     </div>

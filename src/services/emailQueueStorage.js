@@ -17,6 +17,10 @@ import {
   recordSend as recordSendModel, reschedule as rescheduleModel, applyOutcome,
   setDoNotContact as setDNCModel, clearDoNotContact as clearDNCModel,
 } from '../utils/emailQueueModel.js'
+// Milestone 15C7 — mirror manual actions into the permanent Outreach Ledger.
+import {
+  recordManualSendToLedger, recordOverrideToLedger, recordDraftToLedger, recordOutcomeToLedger, recordEmailCorrectedToLedger,
+} from './outreachRecorder.js'
 
 const QUEUE_KEY = 'auvric_email_queue'
 let memoryFallback = null
@@ -125,32 +129,61 @@ export function removeManyFromQueue(savedLeadIds) {
   return { removedCount: queue.length - next.length, queue: next }
 }
 
-export function setEmail(savedLeadId, rawEmail, opts) {
-  return mutate(savedLeadId, r => applyEmail(r, rawEmail, opts))
+export function setEmail(savedLeadId, rawEmail, opts = {}) {
+  const { lead = null, ...rest } = opts
+  const before = getQueueRecord(savedLeadId)
+  const prevEmail = before?.emailAddress ?? null
+  const res = mutate(savedLeadId, r => applyEmail(r, rawEmail, rest))
+  // Record an email correction in the ledger when the address actually changed.
+  if (lead && res.record && prevEmail && res.record.emailAddress && res.record.emailAddress !== prevEmail) {
+    recordEmailCorrectedToLedger(lead, { previousEmail: prevEmail, newEmail: res.record.emailAddress })
+  }
+  return res
 }
 export function clearEmail(savedLeadId, opts) {
   return mutate(savedLeadId, r => removeEmail(r, opts))
 }
-export function saveDraft(savedLeadId, draft, opts) {
-  return mutate(savedLeadId, r => applyDraft(r, draft, opts))
+export function saveDraft(savedLeadId, draft, opts = {}) {
+  const { lead = null, followUp = false } = opts
+  const res = mutate(savedLeadId, r => applyDraft(r, draft, { followUp }))
+  if (lead && res.record) {
+    const stage = followUp ? Math.max(1, Math.min(2, res.record.followUpStage || 1)) : 0
+    recordDraftToLedger(lead, { stage, subject: draft?.subject ?? null, body: draft?.body ?? null, source: draft?.source ?? null })
+  }
+  return res
 }
 // Record a MANUAL send. Returns { record, queue, changed } — `changed:false` when the
 // double-click guard suppressed a duplicate. Never sends anything.
-export function recordManualSend(savedLeadId, opts) {
+export function recordManualSend(savedLeadId, opts = {}) {
+  const { lead = null, ...rest } = opts
   const queue = readQueue()
   const idx = queue.findIndex(r => r.savedLeadId === savedLeadId)
   if (idx === -1) return { record: null, queue, changed: false }
-  const { record, changed } = recordSendModel(queue[idx], opts)
+  const { record, changed } = recordSendModel(queue[idx], rest)
   if (!changed) return { record: queue[idx], queue, changed: false }
   const next = queue.slice(); next[idx] = record
   writeQueue(next)
+  // Mirror the manual send into the permanent ledger (with the just-sent stage).
+  if (lead) recordManualSendToLedger(lead, record, { subject: record.draftSubject ?? null })
   return { record, queue: next, changed: true }
+}
+
+// Record an explicit duplicate-protection override (ledger-only; preserves prior send).
+// The queue send state is unchanged — the prior send is already recorded there.
+export function recordSendOverride(lead, { stage = 0, recipientEmail = null, overrideReason = null, subject = null } = {}) {
+  return recordOverrideToLedger(lead, { stage, recipientEmail, overrideReason, subject })
 }
 export function rescheduleFollowUp(savedLeadId, dateIso) {
   return mutate(savedLeadId, r => rescheduleModel(r, dateIso))
 }
-export function recordOutcome(savedLeadId, outcome, opts) {
-  return mutate(savedLeadId, r => applyOutcome(r, outcome, opts))
+export function recordOutcome(savedLeadId, outcome, opts = {}) {
+  const { lead = null, ...rest } = opts
+  const before = getQueueRecord(savedLeadId)
+  const res = mutate(savedLeadId, r => applyOutcome(r, outcome, rest))
+  if (lead && res.record) {
+    recordOutcomeToLedger(lead, outcome, { reason: rest.reason ?? null, recipientEmail: before?.emailAddress ?? res.record.emailAddress ?? null })
+  }
+  return res
 }
 export function setDoNotContact(savedLeadId, reason) {
   return mutate(savedLeadId, r => setDNCModel(r, reason))
@@ -164,17 +197,26 @@ export function updateNotes(savedLeadId, notes) {
 
 // Bulk Mark Sent (records manual activity only; sends nothing). Excludes ids not in
 // the queue; the caller is responsible for excluding DNC / no-email via partitionForSend.
-export function recordManualSendMany(savedLeadIds, opts) {
+export function recordManualSendMany(savedLeadIds, opts = {}) {
+  const { leadsById = null, ...rest } = opts
   const ids = new Set(Array.isArray(savedLeadIds) ? savedLeadIds : [])
   const queue = readQueue()
   let sentCount = 0
+  const ledgerWrites = []
   const next = queue.map(r => {
     if (!ids.has(r.savedLeadId)) return r
-    const { record, changed } = recordSendModel(r, opts)
-    if (changed) sentCount++
+    const { record, changed } = recordSendModel(r, rest)
+    if (changed) { sentCount++; ledgerWrites.push(record) }
     return record
   })
   writeQueue(next)
+  // Mirror each recorded send into the permanent ledger (bulk records manual sends only).
+  if (leadsById) {
+    for (const record of ledgerWrites) {
+      const lead = leadsById.get ? leadsById.get(record.savedLeadId) : leadsById[record.savedLeadId]
+      if (lead) recordManualSendToLedger(lead, record, { subject: record.draftSubject ?? null })
+    }
+  }
   return { sentCount, queue: next }
 }
 

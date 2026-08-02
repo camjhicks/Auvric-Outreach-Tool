@@ -7,6 +7,8 @@ import {
 } from '../utils/leadStatus'
 import { isProfileResearchEligible } from '../utils/profileResearch'
 import { RESEARCH_STATUS_LABEL } from '../config/profileResearch'
+import { deriveStatusForLead } from '../services/outreachHistoryStorage'
+import { formatDate } from '../utils/outreachMemory'
 import styles from './LeadCard.module.css'
 
 function getDomain(url) {
@@ -21,8 +23,15 @@ function StatusChips({ lead }) {
   const email = emailStatusOf(lead)
   const noWebsite = isProfileResearchEligible(lead)
   const researched = noWebsite && !!lead.profileResearchStatus && lead.profileResearchStatus !== 'not_researched'
+  // Authoritative outreach memory: a lead with recorded outreach must never look untouched.
+  const outreach = deriveStatusForLead(lead)
   return (
     <div className={styles.chips}>
+      {outreach.doNotContact ? (
+        <span className={`${styles.chip} ${styles.chipMuted}`}>Do not contact</span>
+      ) : outreach.hasInitialEmailSent ? (
+        <span className={`${styles.chip} ${styles.chipPos}`}>Contacted {formatDate(outreach.initialEmailSentAt)}</span>
+      ) : null}
       <span className={`${styles.chip} ${website === 'has' ? styles.chipPos : styles.chipMuted}`}>
         {WEBSITE_STATUS_LABEL[website] ?? 'Website unknown'}
       </span>

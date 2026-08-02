@@ -1218,6 +1218,88 @@ unchanged.
 built here): Call Queue · automatic routing · a completed-outreach dashboard · advertisement
 lead intake · real database migration · the final Auvric Digital redesign.
 
+## Outreach Memory & Duplicate-Send Protection (Milestone 15C7)
+
+Scout permanently remembers who has been contacted so the same business is never
+accidentally sent another **initial** email — while legitimate follow-ups stay allowed.
+Nothing is ever sent automatically; this only records and guards Cameron's manual actions.
+
+- **Purpose.** A permanent Outreach Memory that prevents duplicate initial outreach and
+  keeps a coherent contact history across Saved Leads, the Email Queue, duplicate/merged
+  lead records, corrected email addresses, regenerated drafts, refreshes, and new sessions.
+- **Event ledger.** A centralized, append-oriented event ledger is the single source of
+  truth. Each event is compact and identity-keyed (`id`, `savedLeadId`, `placeId`,
+  `businessIdentityKey`, normalized business name / website domain / phone / recipient
+  email, `eventType`, `sequenceStage`, `subject`, a non-reversible `bodyFingerprint`,
+  timestamps, `outcome`, `manualOverride` / `overrideReason`, `source`, `strategyVersion`).
+  Event types include initial/follow-up drafted & marked-sent, reply, interested, meeting
+  scheduled, wrong-email, do-not-contact, email-corrected, override, and workflow-completed.
+  The ledger never stores raw HTML, provider/AI responses, prompts, private reasoning, or
+  secrets — and email bodies are represented only by a fingerprint, never stored in full.
+- **Business identity matching.** Duplicate detection uses the **same** centralized
+  lead-identity service as Saved Leads (Place ID → website + phone → phone + name →
+  name + address, with a safe fallback). There is no competing duplicate logic. A shared
+  host (Facebook, Wix, a directory, a franchise system) never collapses unrelated
+  businesses, and separate locations are not merged without enough identity evidence.
+- **Duplicate initial-email protection.** Before an initial email can be marked sent,
+  Scout checks whether an initial-email event already exists for the same business
+  identity — including under a **duplicate Saved Lead**. If so it blocks the default
+  action, shows the recorded history (recipient, subject, date, outcome, follow-up stage),
+  and recommends sending or scheduling a follow-up instead. A changed subject or
+  regenerated body never bypasses the block — business identity is the primary protection;
+  fingerprinting is only supplementary.
+- **Follow-up stage rules.** Initial → Follow-Up 1 → Follow-Up 2 only (no Follow-Up 3).
+  Each follow-up requires the prior stage recorded; the same stage cannot be marked sent
+  twice; do-not-contact blocks everything; a recorded reply suspends standard follow-ups;
+  a scheduled meeting or completed workflow ends follow-up suggestions.
+- **Email-address correction.** Correcting an address preserves the previous one, records
+  an `email_corrected` event, keeps all history under the same business identity, and
+  blocks the old wrong address. Using a new address for a business that was already
+  contacted at another address warns and defaults to manual review — it does not assume a
+  fresh cold sequence.
+- **Do-not-contact precedence.** Do-not-contact has the highest priority: it blocks all
+  initial emails, follow-ups, and bulk actions, survives lead merges, email correction,
+  and queue removal/re-add, and can only be lifted with an explicit reasoned override.
+  Scout makes no legal-compliance claims.
+- **Bulk-action protection.** Bulk “Mark Sent” validates every selected lead through the
+  same pre-send validator, shows allowed / blocked / review counts, silently records only
+  the eligible ones, always excludes do-not-contact and duplicate initials, and states
+  plainly that it records manual sending only — Scout sends nothing. Overrides are always
+  individual, never bulk.
+- **Manual override.** Overriding duplicate protection requires explicit confirmation and
+  a written reason, records a distinct `outreach_override` event, and never replaces or
+  erases the prior outreach history.
+- **Lead-merge reconciliation.** Merging duplicate Saved Leads combines their history
+  safely: the earliest initial-send timestamp and every distinct recipient/subject/outcome
+  and do-not-contact status are preserved, no event is duplicated, and neither record ever
+  appears untouched when the business was already contacted.
+- **Storage & migration.** The ledger lives in the versioned `auvric_outreach_history`
+  namespace behind a DB-ready read/write boundary, with safe parsing and malformed-store
+  recovery. A one-time, idempotent, version-gated migration reconstructs history from
+  existing Email Queue records (sent timestamps, follow-up stage, do-not-contact,
+  wrong-email, outcomes), tagged `source: legacy_email_queue`; it never invents a send that
+  was not recorded and never deletes the old queue fields.
+- **Persistence.** History survives refresh, browser restart, **Reset Workspace**, queue
+  removal/re-add, Saved Lead reopening, and new sessions. Reset Workspace clears only
+  transient session state — it never deletes outreach history. No API call runs
+  automatically to restore history.
+- **Derived status is never the source of truth.** Current status (`hasInitialEmailSent`,
+  follow-up stages, `nextAllowedAction`, `duplicateSendBlocked`, etc.) is always recomputed
+  from the authoritative ledger; cached summaries are only ever recomputable projections.
+- **UI.** A compact Outreach History block (initial sent date or “Not sent”, recipient,
+  subject, follow-up statuses, last outreach, current outcome, do-not-contact / wrong-email
+  warnings, and the next recommended action) appears on the Email Queue card, the Saved
+  Lead detail, and a compact contacted indicator on the Saved Lead card. Full history is an
+  expandable timeline — never full email bodies on the card.
+- **Analytics preparation.** Normalized data (first-contact date, touches, follow-up count,
+  outcomes, subject strategy, primary problem type, niche, source, final outcome) is
+  captured for future analytics; **no dashboard or charts are built in this milestone.**
+
+**Current limitations / next steps:** no analytics dashboard, no automatic sending, and no
+Gmail/SMTP/OAuth/webhook integration are built here. Recommended next: begin real outreach,
+inspect real generated drafts, record replies and outcomes, and build analytics only after
+real data exists. The ledger's read/write boundary is ready for a future database migration.
+
 ## Local setup
 
 ```bash

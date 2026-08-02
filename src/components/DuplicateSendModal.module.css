@@ -1,0 +1,51 @@
+.modal { max-width: 30rem; text-align: left; }
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--color-text, #e7ecf3);
+}
+.reasons {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--color-text, #e7ecf3);
+}
+.reasons li { margin-bottom: 0.2rem; }
+.recommend {
+  margin: 0.6rem 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #9aa4b2);
+}
+.overrideBox { margin: 0.5rem 0; }
+.reasonLabel {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #9aa4b2);
+  margin-bottom: 0.3rem;
+}
+.reasonInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface, #12161d);
+  color: var(--color-text, #e7ecf3);
+  font: inherit;
+  resize: vertical;
+}
+.hardBlock {
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: #ff8a8a;
+}
+.altBtn {
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-accent, #7cc7ff);
+  background: transparent;
+  color: var(--color-accent, #7cc7ff);
+  cursor: pointer;
+  font: inherit;
+}
+.altBtn:hover { background: rgba(124, 199, 255, 0.1); }
