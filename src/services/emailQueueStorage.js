@@ -21,6 +21,7 @@ import {
 import {
   recordManualSendToLedger, recordOverrideToLedger, recordDraftToLedger, recordOutcomeToLedger, recordEmailCorrectedToLedger,
 } from './outreachRecorder.js'
+import { deriveStatusForLead } from './outreachHistoryStorage.js'
 
 const QUEUE_KEY = 'auvric_email_queue'
 let memoryFallback = null
@@ -134,9 +135,14 @@ export function setEmail(savedLeadId, rawEmail, opts = {}) {
   const before = getQueueRecord(savedLeadId)
   const prevEmail = before?.emailAddress ?? null
   const res = mutate(savedLeadId, r => applyEmail(r, rawEmail, rest))
-  // Record an email correction in the ledger when the address actually changed.
-  if (lead && res.record && prevEmail && res.record.emailAddress && res.record.emailAddress !== prevEmail) {
-    recordEmailCorrectedToLedger(lead, { previousEmail: prevEmail, newEmail: res.record.emailAddress })
+  // Record an email correction in the ledger when the address actually changed. The prior
+  // address may already be cleared on the queue record (e.g. after a wrong-email outcome),
+  // so fall back to the last recipient the ledger knows for this business.
+  if (lead && res.record?.emailAddress) {
+    const priorKnown = prevEmail ?? deriveStatusForLead(lead).initialRecipientEmail ?? null
+    if (priorKnown && res.record.emailAddress.toLowerCase() !== priorKnown.toLowerCase()) {
+      recordEmailCorrectedToLedger(lead, { previousEmail: priorKnown, newEmail: res.record.emailAddress })
+    }
   }
   return res
 }

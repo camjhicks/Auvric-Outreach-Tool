@@ -8,6 +8,53 @@ outreach drafts, and manage a lightweight CRM.
 > metadata) lives in your **browser's localStorage** — see
 > [Data & persistence](#data--persistence) before relying on it.
 
+## Outreach Memory — release (Milestone 15C8)
+
+The **Outreach Memory & Duplicate-Send Protection** system (Milestone 15C7) is validated
+and deployed to the live branch. Scout now permanently remembers who has been contacted so
+the same business is never accidentally sent another initial email — while legitimate
+follow-ups stay allowed. Nothing is ever sent automatically.
+
+- **Live branch:** `claude/auvric-scout-foundation-4pv2u4` (Render's deploy branch)
+- **Previous live commit:** `f08be48` (the email-quality engine, Milestone 15C5)
+- **Deployed commit:** the validated 15C7 release (`7a05456`) plus two release-blocking
+  fixes found during the release gate (below), fast-forwarded onto the live branch (history
+  advanced only, never rewritten)
+- **Rollback reference:** `backup/pre-outreach-memory-release` → `f08be48` (the previous
+  live commit; see [Release rollback](#release-rollback))
+- **Render URL:** https://auvric-scout.onrender.com
+
+**Deployed capabilities** (see [Outreach Memory & Duplicate-Send Protection](#outreach-memory--duplicate-send-protection-milestone-15c7)
+for full detail): a permanent, append-oriented event ledger (`auvric_outreach_history`) as
+the single source of truth; duplicate initial-email protection; **cross-lead** duplicate
+detection via the shared business-identity service (Place ID, phone + name, domain + phone,
+name + address, recipient email — never a shared host alone); Follow-Up 1 → Follow-Up 2
+sequence enforcement with per-stage duplicate protection; corrected-email history and
+wrong-email blocking; do-not-contact precedence that survives merge, correction, queue
+re-add, and Reset Workspace; reasoned manual override (individual only); bulk-send recording
+protection with allowed/blocked/review counts; a one-time idempotent legacy migration from
+Email Queue records; and outreach-history UI on the Email Queue and Saved Leads. Derived
+status is always recomputable from the ledger; no email body, raw HTML, provider response,
+AI prompt, private reasoning, or secret is persisted. **No automatic email sending and no
+Gmail/SMTP/OAuth/webhook integration.**
+
+**Release-blocking fixes made during the 15C8 gate** (the only code changes on top of
+`7a05456`; the outreach-memory architecture is otherwise unchanged):
+
+1. **Cross-lead name + address match.** Outreach events now store a normalized address, so a
+   duplicate Saved Lead identified only by matching business name + address is correctly
+   recognized as already contacted (previously it could look untouched and bypass
+   duplicate protection). Stronger identity signals were already covered.
+2. **Corrected-email linkage after a wrong-email outcome.** Correcting an address now records
+   an `email_corrected` event even when the wrong-email outcome had already cleared the
+   queue's address, by resolving the prior address from the ledger — so the old and new
+   addresses stay linked to the same business.
+
+**Known limitations:** no analytics dashboard (metadata is prepared, not visualized); no
+automatic sending; no email-provider integration. **Recommended next action:** begin real
+outreach and collect actual replies and outcomes; build analytics only after real data
+exists.
+
 ## Scout V1 — release (Milestone 15C4)
 
 Scout V1 is the revenue-ready release: the full workflow validated and deployed for

@@ -41,6 +41,7 @@ export function identityFields(lead, recipientEmail = null) {
     normalizedBusinessName: slug(l.businessName) || null,
     normalizedWebsiteDomain: domainKey(l.websiteUrl),
     normalizedPhone: normalizePhoneDigits(l.phone),
+    normalizedAddress: slug(l.address) || null,
     recipientEmail: typeof recipientEmail === 'string' && recipientEmail.trim() ? recipientEmail.trim() : null,
     normalizedRecipientEmail: recipientEmailKey(recipientEmail),
   }
@@ -71,6 +72,7 @@ export function eventMatchesIdentity(event, lead) {
     googlePlaceId: event.placeId ?? undefined,
     businessName: event.normalizedBusinessName ?? undefined,
     phone: event.normalizedPhone ?? undefined,
+    address: event.normalizedAddress ?? undefined,
     // domain+phone matching in leadsMatch reads websiteUrl → give it a bare domain.
     websiteUrl: event.normalizedWebsiteDomain ? `https://${event.normalizedWebsiteDomain}` : undefined,
   }
