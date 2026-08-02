@@ -44,10 +44,18 @@ function emailAngleFor(lead) {
  * @param {object} [opts] { email, stage }  stage: 'initial' | 'follow_up_1' | 'follow_up_2'
  * @returns {object} the generate-outreach request body
  */
+// Detected on-site issue factor ids from the Website Opportunity breakdown — these drive
+// the strategy engine's problem selection (Milestone 15C5).
+function factorIdsOf(lead) {
+  const b = Array.isArray(lead?.websiteScoringBreakdown) ? lead.websiteScoringBreakdown : []
+  return b.map(f => f?.factorId).filter(x => typeof x === 'string')
+}
+
 export function buildDraftRequestFromLead(lead, { email = null, stage = 'initial' } = {}) {
   const l = lead ?? {}
   const contactEmail = email ?? l.bestEmail ?? (Array.isArray(l.emailsFound) && l.emailsFound.length ? l.emailsFound[0] : null)
   const angle = emailAngleFor(l)
+  const factorIds = factorIdsOf(l)
   const audit = {
     serviceFamily: l.serviceFamily ?? null,
     nicheLabel: l.selectedNicheLabel ?? l.industry ?? null,
@@ -61,8 +69,22 @@ export function buildDraftRequestFromLead(lead, { email = null, stage = 'initial
     recommendedOutreachAngle: angle,
     verifiedOpportunityReason: l.primaryWebsiteOpportunityReason ?? null,
     bookingPathStatus: l.bookingFrictionLevel ?? null,
-    auditConfidence: l.evidenceConfidence ?? l.websiteEvidenceConfidence ?? 'unknown',
+    auditConfidence: l.websiteEvidenceConfidence ?? l.evidenceConfidence ?? 'unknown',
     auditLimitations: Array.isArray(l.auditLimitations) ? l.auditLimitations : [],
+    // ---- Strategy-engine signals (Milestone 15C5) -----------------------
+    factorIds,
+    coverageSufficient: l.auditStatus !== 'audit_blocked' && l.auditStatus !== 'partially_audited',
+    phoneOnlyContactFlow: factorIds.includes('phone_hard_to_find'),
+    // No-website research context (used only for no-website leads).
+    businessActivityStatus: l.businessActivityStatus ?? null,
+    // Owner-name evidence extracted during the audit (compact; empty when none verified).
+    ownerEvidence: l.ownerEvidence ?? {},
+    // A real, verified submission failure (rare) — never inferred from absence.
+    submissionFailure: l.submissionFailure ?? null,
+    // On-site trust signals are left to the planner, which only compliments a VERIFIED
+    // strength (public review volume). We never infer an on-site strength from the mere
+    // absence of a negative factor, so Scout never praises something it couldn't verify.
+    trust: {},
   }
   return {
     url: l.websiteUrl || null,

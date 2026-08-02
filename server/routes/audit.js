@@ -38,6 +38,8 @@ router.post('/', async (req, res) => {
     primaryAuditFinding: result.primaryAuditFinding,
     primaryBookingFinding: result.primaryBookingFinding,
     recommendedOutreachAngle: result.recommendedOutreachAngle,
+    // 15C5: conservative owner/decision-maker candidates for personalized greetings.
+    ownerEvidence: result.evidence?.ownerEvidence ?? { candidates: [] },
   })
 })
 

@@ -95,6 +95,8 @@ function migrateLead(lead) {
     lastAuditAttemptAt: lead.lastAuditAttemptAt ?? null,
     auditStatus: lead.auditStatus ?? null,
     siteAvailabilityStatus: lead.siteAvailabilityStatus ?? null,
+    // 15C5: conservative owner/decision-maker evidence for personalized email greetings.
+    ownerEvidence: lead.ownerEvidence ?? null,
     emailsFound: lead.emailsFound ?? [],
     bestEmail: lead.bestEmail ?? getBestEmail(lead.emailsFound ?? []),
     auditNotes: lead.auditNotes ?? null,
@@ -182,6 +184,7 @@ export function saveLead({
   clientOpportunity,
   salesReasoning,
   siteHealth,
+  ownerEvidence,
 }) {
   const emails = emailsFound ?? []
   const now = new Date().toISOString()
@@ -198,6 +201,7 @@ export function saveLead({
     lastAuditAttemptAt: now,
     auditStatus,
     siteAvailabilityStatus: siteHealth?.siteAvailabilityStatus ?? null,
+    ownerEvidence: ownerEvidence ?? null,
     emailsFound: emails,
     bestEmail: getBestEmail(emails),
     auditNotes: auditNotes ?? null,

@@ -1158,6 +1158,62 @@ are preserved; deleted Saved Lead references recover safely; storage failures de
 gracefully; external Maps links open in a new tab; and no raw provider response or API key is
 ever exposed or persisted.
 
+**Next milestone:** the Outreach Email Strategy Engine (below).
+
+## Outreach Email Strategy Engine (Milestone 15C5)
+
+The initial outreach email is no longer improvised from a loose data dump. Scout now
+**reasons first, then writes**: it builds a normalized strategy plan and drafts a nearly
+send-ready, evidence-safe email from that approved plan. The follow-up engine (15C2) is
+unchanged.
+
+**How it reasons (server-side, deterministic plan):** understand the company → find a
+verified owner/decision-maker name (only from explicit evidence) → pick one controlled,
+truthful positive observation → select one verified primary problem → match the claim
+strength to the evidence → explain the real customer consequence (never invented financial
+loss) → choose the niche-specific solution and only the features that solve that problem →
+construct an evidence-matched subject → draft → validate personalization, logic, evidence,
+tone, repetition, and CTA → repair or fall back. The plan lives in
+`server/utils/buildStrategyPlan.js`; the reasoning knowledge (niche terminology,
+problem→solution map, subject-severity rules, positive-observation catalogue, transitions,
+banned subjects) is centralized in `server/config/emailStrategy.js`.
+
+**Subject severity must match evidence.** A subject can only be as strong as what was
+verified: `verified_failure` (real technical failure) may say "isn't working" / "returning
+an error"; `verified_major/moderate_friction` describes the friction directly ("no clear
+way to request an estimate"); `verified_no_website` says "I couldn't find a main website"
+(never "you have no online presence"); `limited_evidence_question` must use a professional
+question and may never claim anything is broken. The quality validator **rejects any
+subject or body stronger than its evidence**, and generic subjects ("Website idea for…",
+"Quick website idea", "More customers for…") are banned outright.
+
+**Owner-name personalization (evidence-driven, §7).** A first-name greeting ("Hi Jack,")
+is used only when a real person is verified from approved website evidence (an explicit
+"owned/founded by", schema.org founder, or an About/Team "Meet [Name]"). Ownership is never
+inferred from an email username, the business name, a reviewer, a social handle, or a bare
+copyright line; unknown or low-confidence resolves to the company greeting
+("Hello Rivera Roofing team,") and flags the lead for manual review. Extraction runs during
+the Website Audit and is stored compactly on the lead — no raw HTML.
+
+**Honest positive observation.** One controlled compliment ("your project photos do a
+strong job…", "the reviews give customers real confidence…") acknowledges a real strength
+while leaving the conversion problem intact — and it is **never forced**: with no verifiable
+strength, Scout uses a neutral "I was reviewing how customers book with you" opening instead
+of praising something it couldn't confirm.
+
+**Quality gate + fallback.** When the Anthropic key is present, the AI drafts the *approved
+plan* (not raw evidence) and its output must pass **both** the evidence-safety validator and
+the new quality validator (no generic/over-strong subject, no confidence-killing hedging on
+strong evidence, exactly one non-duplicated CTA, no repetition, no feature dumping, no
+placeholders, correct personalization). If it fails — or Anthropic is unavailable — Scout
+uses the **deterministic, reference-quality draft built from the same plan**, so every send
+meets the quality floor. Nothing is ever sent automatically.
+
+**Preserved safety:** no invented reviews, ratings, certifications, guarantees, financing,
+licenses, years-in-business, ownership, or lost-revenue/percentage claims; no em dashes; no
+"audit/scan/AI" mentions; manual sending only; SSRF, rate limits, and redirect validation
+unchanged.
+
 **Next milestone:** **15C4 — Call Queue and Manual Call Workflow.** Later planned work (not
 built here): Call Queue · automatic routing · a completed-outreach dashboard · advertisement
 lead intake · real database migration · the final Auvric Digital redesign.

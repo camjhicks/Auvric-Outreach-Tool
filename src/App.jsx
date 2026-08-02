@@ -136,6 +136,7 @@ export default function App() {
       clientOpportunity: auditResult.clientOpportunity ?? null,
       salesReasoning: auditResult.salesReasoning ?? null,
       siteHealth: auditResult.siteHealth ?? null,
+      ownerEvidence: auditResult.ownerEvidence ?? null,
     })
     setLeads(updated)
     return lead

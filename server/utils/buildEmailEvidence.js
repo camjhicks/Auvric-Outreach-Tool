@@ -82,5 +82,23 @@ export function buildEmailEvidence(req = {}) {
     lowConfidence: confidence === 'low' || confidence === 'unknown',
     canCiteReviews,
     canCiteRating,
+    // ---- Strategy-engine passthrough (Milestone 15C5) --------------------
+    // Compact, already-approved signals used to build the reasoning plan. Never raw
+    // HTML or provider data. All optional — the planner degrades to safe defaults.
+    reviewBand,
+    coverageSufficient: audit.coverageSufficient !== false,
+    factorIds: Array.isArray(audit.factorIds) ? audit.factorIds.filter(str).slice(0, 12) : [],
+    phoneOnlyContactFlow: audit.phoneOnlyContactFlow === true,
+    submissionFailure: str(audit.submissionFailure), // 'booking' | 'estimate' when a real failure was verified
+    trust: (audit.trust && typeof audit.trust === 'object') ? {
+      projectProof: !!audit.trust.projectProof,
+      reviewsOnSite: !!audit.trust.reviewsOnSite,
+      serviceClarity: !!audit.trust.serviceClarity,
+      serviceArea: !!audit.trust.serviceArea,
+      brand_visual: !!audit.trust.brand_visual,
+    } : {},
+    ownerEvidence: (audit.ownerEvidence && typeof audit.ownerEvidence === 'object') ? audit.ownerEvidence : {},
+    businessActivityStatus: str(audit.businessActivityStatus),
+    smallBusinessLikelihood: str(audit.smallBusinessLikelihood),
   }
 }

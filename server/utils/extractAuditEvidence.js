@@ -56,6 +56,25 @@ function attr(tag, name) {
 }
 const uniqCap = arr => [...new Set(arr.filter(Boolean))].slice(0, CAP.arr)
 
+// Conservative owner / decision-maker candidate extraction (Milestone 15C5, §7). Only
+// EXPLICIT signals are captured: "owned/founded/operated by [Name]", schema.org founder,
+// and "Meet [Name]" on an about/team page. A bare copyright name is never treated as an
+// owner. Names are further validated (person-shape, not the business) downstream.
+const NAME = "[A-Z][a-z]+(?:\\s+[A-Z][a-z']+){0,2}"
+const OWNER_PHRASE_RE = new RegExp(`\\b(?:owned|founded|operated)\\s+by\\s+(${NAME})`, 'g')
+const MEET_RE = new RegExp(`\\bMeet\\s+(${NAME})\\b`, 'g')
+function extractOwnerCandidates(text, html, url) {
+  const out = []
+  const isAboutish = /about|team|our-story|founder|meet/i.test(url)
+  for (const m of text.matchAll(OWNER_PHRASE_RE)) out.push({ name: m[1].trim(), source: 'explicit_owner_phrase', context: 'owned/founded by' })
+  // schema.org founder / owner in structured data or microdata.
+  for (const m of html.matchAll(/"(?:founder|owner)"\s*:\s*(?:\{[^}]*"name"\s*:\s*"([^"]{2,40})"|"([^"]{2,40})")/gi)) {
+    const nm = (m[1] || m[2] || '').trim(); if (nm) out.push({ name: nm, source: 'structured_founder', context: 'structured data' })
+  }
+  if (isAboutish) for (const m of text.matchAll(MEET_RE)) out.push({ name: m[1].trim(), source: 'about_meet', context: 'About/Team page' })
+  return out.slice(0, 4)
+}
+
 // Per-page raw signal extraction.
 function extractPage(html, url, baseUrl) {
   const text = plainText(html)
@@ -167,6 +186,7 @@ function extractPage(html, url, baseUrl) {
     schedulerHosts, iframeSchedulers, callButton, textButton, bookCta, quoteWording,
     serviceRequestWording, consultationWording, callCta, textCta, contactHeading, addressPresent,
     realFormCount: realForms.length, maxFormFields: forms.reduce((m, fm) => Math.max(m, fm.fieldCount ?? 0), 0),
+    ownerCandidates: extractOwnerCandidates(text, html, url),
   }
 }
 
@@ -413,5 +433,15 @@ export function extractAuditEvidence(pages, meta = {}) {
     contactPath,
     bookingPath,
     auditLimitations: limitations,
+    // 15C5: conservative owner/decision-maker candidates (deduped by name).
+    ownerEvidence: (() => {
+      const seen = new Set(); const candidates = []
+      for (const p of per) for (const c of (p.e.ownerCandidates ?? [])) {
+        const key = c.name.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key); candidates.push(c)
+      }
+      return { candidates: candidates.slice(0, 4) }
+    })(),
   }
 }
