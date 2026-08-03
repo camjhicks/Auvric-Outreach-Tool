@@ -25,6 +25,12 @@ const JSON_LIMIT = process.env.JSON_BODY_LIMIT || '32kb'
 // limiting) are accurate. `1` (not `true`) keeps it non-permissive. Harmless locally.
 app.set('trust proxy', 1)
 
+// Lead Discovery carries a compact saved-lead exclusion list (the user's own data, no
+// secrets) so it gets a larger, still-bounded body limit; every other route keeps the
+// tight default. Mounted BEFORE the global parser so it wins for this path and the
+// global parser then skips (body already parsed).
+const DISCOVER_JSON_LIMIT = process.env.DISCOVER_JSON_LIMIT || '512kb'
+app.use('/api/discover-leads', express.json({ limit: DISCOVER_JSON_LIMIT }))
 app.use(express.json({ limit: JSON_LIMIT }))
 
 // Lightweight health check — no secrets, no config values.

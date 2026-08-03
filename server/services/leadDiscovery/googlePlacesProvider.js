@@ -7,6 +7,11 @@
 // provider-neutral normalized shape so the rest of the app never sees a raw
 // Google response, and it never returns/logs the API key.
 
+// Milestone 15C9 — the ONE centralized business-identity service (shared with Saved
+// Leads / Outreach Memory) is imported here so Discovery excludes already-saved
+// businesses with exactly the same matching rules. No second identity system.
+import { leadsMatch } from '../../../src/utils/leadIdentity.js'
+
 const TEXT_SEARCH_URL = 'https://places.googleapis.com/v1/places:searchText'
 
 // IMPORTANT: The X-Goog-FieldMask directly affects both API behavior and BILLING.
@@ -152,56 +157,132 @@ async function fetchTextSearchPage({ apiKey, textQuery, pageToken }) {
   return data
 }
 
+// Map a normalized candidate onto the shape the centralized lead-identity matcher
+// expects, so Discovery excludes saved leads with the SAME rules as everywhere else.
+function candidateAsLead(c) {
+  return {
+    googlePlaceId: c.providerId,
+    businessName: c.businessName,
+    websiteUrl: c.websiteUrl,
+    phone: c.phoneNumber,
+    address: c.formattedAddress,
+  }
+}
+
+const PERMANENTLY_CLOSED = 'CLOSED_PERMANENTLY'
+const TEMPORARILY_CLOSED = 'CLOSED_TEMPORARILY'
+
 /**
- * Search for local businesses via Google Places Text Search (New).
- * Never returns or logs the API key. Paginates only as far as `limit` requires.
+ * Search for local businesses via Google Places Text Search (New), EXCLUDING businesses
+ * already in Saved Leads and CONTINUING to paginate until the requested number of NEW
+ * businesses is collected or the provider is exhausted (Milestone 15C9). Saved leads,
+ * duplicates, and permanently-closed records never consume a result slot.
  *
- * @param {{ industry: string, location: string, limit: number, apiKey: string }} args
- * @returns {Promise<Array<object>>} normalized businesses (deduped, capped at limit)
+ * Broad inclusion: a business is NEVER dropped for lacking a website, reviews, rating,
+ * phone, or a low score. Only permanently-closed and duplicate/already-saved records are
+ * removed. Temporarily-closed businesses are kept and flagged with a warning.
+ *
+ * Never returns or logs the API key. Bounded by MAX_PAGES / HARD_MAX_RESULTS so it can
+ * never fan out unbounded. `fetchPage` is injectable purely so tests can drive pagination
+ * without any paid provider call.
+ *
+ * @param {{ industry, location, limit, apiKey, excludeLeads?, fetchPage? }} args
+ * @returns {Promise<{ businesses: object[], metadata: object }>}
  */
-export async function searchBusinesses({ industry, location, limit, apiKey }) {
+export async function searchBusinesses({
+  industry, location, limit, apiKey,
+  excludeLeads = [],
+  fetchPage = fetchTextSearchPage,
+}) {
   const cappedLimit = Math.min(Math.max(1, limit), HARD_MAX_RESULTS)
   const textQuery = `${industry} in ${location}`
+  const excludes = Array.isArray(excludeLeads) ? excludeLeads : []
 
-  const seen = new Set()
+  const seenIds = new Set()
   const collected = []
+  const meta = {
+    requestedResultCount: cappedLimit,
+    returnedNewLeadCount: 0,
+    providerResultCount: 0,
+    savedLeadExclusionCount: 0,
+    duplicateExclusionCount: 0,
+    permanentlyClosedExclusionCount: 0,
+    outOfScopeExclusionCount: 0,
+    pagesAttempted: 0,
+    providerExhausted: false,
+    stoppedBySafetyLimit: false,
+    stoppedByProviderError: false,
+  }
+
   let pageToken = null
+  let targetMet = false
 
   for (let page = 0; page < MAX_PAGES; page++) {
     let data
-    if (page === 0) {
-      data = await fetchTextSearchPage({ apiKey, textQuery, pageToken: null })
-    } else {
-      // A just-issued nextPageToken can momentarily be rejected; bounded retry.
-      let attempt = 0
-      for (;;) {
-        try {
-          data = await fetchTextSearchPage({ apiKey, textQuery, pageToken })
-          break
-        } catch (err) {
-          const retryable = err instanceof LeadDiscoveryError &&
-            (err.code === 'UPSTREAM' || err.code === 'NETWORK')
-          if (!retryable || attempt >= PAGE_TOKEN_MAX_RETRIES) throw err
-          attempt++
-          await sleep(PAGE_TOKEN_RETRY_DELAY_MS)
+    try {
+      if (page === 0) {
+        data = await fetchPage({ apiKey, textQuery, pageToken: null })
+      } else {
+        // A just-issued nextPageToken can momentarily be rejected; bounded retry.
+        let attempt = 0
+        for (;;) {
+          try {
+            data = await fetchPage({ apiKey, textQuery, pageToken })
+            break
+          } catch (err) {
+            const retryable = err instanceof LeadDiscoveryError &&
+              (err.code === 'UPSTREAM' || err.code === 'NETWORK')
+            if (!retryable || attempt >= PAGE_TOKEN_MAX_RETRIES) throw err
+            attempt++
+            await sleep(PAGE_TOKEN_RETRY_DELAY_MS)
+          }
         }
       }
+    } catch (err) {
+      // Page 0 failure has nothing to return → propagate (route maps to HTTP status).
+      if (page === 0) throw err
+      // A later-page failure returns the partial results already collected (§3).
+      meta.stoppedByProviderError = true
+      break
     }
+
+    meta.pagesAttempted++
 
     const places = Array.isArray(data?.places) ? data.places : []
     for (const raw of places) {
-      const normalized = normalizePlace(raw)
-      if (!normalized) continue
-      if (seen.has(normalized.providerId)) continue
-      seen.add(normalized.providerId)
-      collected.push(normalized)
+      const c = normalizePlace(raw)
+      if (!c) continue
+      // A repeated provider id across pages is a duplicate page result — never counted.
+      if (seenIds.has(c.providerId)) { meta.duplicateExclusionCount++; continue }
+      seenIds.add(c.providerId)
+      meta.providerResultCount++
+
+      // Permanently closed → excluded (never conflated with temporary closure).
+      if (c.businessStatus === PERMANENTLY_CLOSED) { meta.permanentlyClosedExclusionCount++; continue }
+
+      // Already in Saved Leads → excluded via the centralized identity matcher.
+      const asLead = candidateAsLead(c)
+      if (excludes.some(e => leadsMatch(asLead, e))) { meta.savedLeadExclusionCount++; continue }
+
+      // Same business as one already collected this run (distinct provider id) → dedup.
+      if (collected.some(k => leadsMatch(asLead, candidateAsLead(k)))) { meta.duplicateExclusionCount++; continue }
+
+      // Broadly included: no website / no reviews / no phone / low score all pass.
+      collected.push({ ...c, temporarilyClosed: c.businessStatus === TEMPORARILY_CLOSED })
+      if (collected.length >= cappedLimit) { targetMet = true; break }
     }
 
-    if (collected.length >= cappedLimit) break
+    if (targetMet) break
+
     const nextToken = typeof data?.nextPageToken === 'string' ? data.nextPageToken : null
-    if (!nextToken) break
+    if (!nextToken) { meta.providerExhausted = true; break }
     pageToken = nextToken
+
+    // A token remains but we have reached the page cap → stopped by a safety limit.
+    if (page === MAX_PAGES - 1) meta.stoppedBySafetyLimit = true
   }
 
-  return collected.slice(0, cappedLimit)
+  const businesses = collected.slice(0, cappedLimit)
+  meta.returnedNewLeadCount = businesses.length
+  return { businesses, metadata: meta }
 }

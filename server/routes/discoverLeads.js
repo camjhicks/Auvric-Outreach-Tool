@@ -10,6 +10,28 @@ const MIN_LIMIT = 1
 const MAX_LIMIT = 60
 const DEFAULT_LIMIT = 20
 const MAX_FIELD_LENGTH = 120
+// Saved-lead exclusion payload (Milestone 15C9): compact identity descriptors of the
+// user's OWN saved leads (no secrets). Capped so the request can never grow unbounded.
+const MAX_EXCLUDES = 6000
+const MAX_EXCLUDE_FIELD = 200
+
+// Keep only the identity fields the centralized matcher uses; truncate defensively.
+function sanitizeExcludeLeads(raw) {
+  if (!Array.isArray(raw)) return []
+  const s = v => (typeof v === 'string' ? v.slice(0, MAX_EXCLUDE_FIELD) : undefined)
+  const out = []
+  for (const e of raw.slice(0, MAX_EXCLUDES)) {
+    if (!e || typeof e !== 'object') continue
+    out.push({
+      googlePlaceId: s(e.googlePlaceId),
+      businessName: s(e.businessName),
+      phone: s(e.phone),
+      websiteUrl: s(e.websiteUrl),
+      address: s(e.address),
+    })
+  }
+  return out
+}
 
 router.post('/', async (req, res) => {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY
@@ -17,7 +39,8 @@ router.post('/', async (req, res) => {
     return res.status(503).json({ error: 'Lead discovery is not configured yet.' })
   }
 
-  const { industry: rawIndustry, location: rawLocation, limit: rawLimit } = req.body ?? {}
+  const { industry: rawIndustry, location: rawLocation, limit: rawLimit, excludeLeads: rawExcludes } = req.body ?? {}
+  const excludeLeads = sanitizeExcludeLeads(rawExcludes)
 
   const industry = typeof rawIndustry === 'string' ? rawIndustry.trim() : ''
   const location = typeof rawLocation === 'string' ? rawLocation.trim() : ''
@@ -43,12 +66,14 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const businesses = await searchBusinesses({ industry, location, limit, apiKey })
+    const { businesses, metadata } = await searchBusinesses({ industry, location, limit, apiKey, excludeLeads })
     return res.json({
       query: { industry, location, limit },
       provider: 'google_places',
-      totalFound: businesses.length,
+      // totalFound now counts NEW businesses (already-saved / duplicate / closed excluded).
+      totalFound: metadata.returnedNewLeadCount,
       businesses,
+      discoveryMeta: metadata,
     })
   } catch (err) {
     if (err instanceof LeadDiscoveryError) {

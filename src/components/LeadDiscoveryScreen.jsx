@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
-import { discoverLeads } from '../services/leadDiscoveryApi'
+import { discoverLeads, toExcludeDescriptors } from '../services/leadDiscoveryApi'
+import { excludeSavedFromResults, buildDiscoveryMessage } from '../utils/discoveryExclusion'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { toDiscoveryBusiness } from '../utils/discoveryBusiness'
 import { getEnabledNiches, resolveNicheSearch, CUSTOM_NICHE_ID } from '../config/niches'
@@ -75,17 +76,20 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], 
   const effectiveLimit = limitChoice === 'custom' ? customLimitNum : Number(limitChoice)
 
   // Enrich → validate/dedupe → qualify (unsorted, unfiltered). Pure; no mutation.
-  const { validQualified, excludedInvalidDup } = useMemo(() => {
-    if (!result) return { validQualified: [], excludedInvalidDup: 0 }
+  const { validQualified, excludedInvalidDup, sessionExcludedCount } = useMemo(() => {
+    if (!result) return { validQualified: [], excludedInvalidDup: 0, sessionExcludedCount: 0 }
     const enriched = result.businesses.map(b => {
       const normalizedUrl = normalizeWebsiteUrl(b.websiteUrl)
       const hasWebsite = normalizedUrl != null
       return { ...b, normalizedUrl, hasWebsite, eligible: hasWebsite }
     })
-    const { kept, excluded } = dedupeAndValidate(enriched)
+    // Live exclusion of any business saved DURING this session (§8): it disappears from
+    // the list immediately, with no new paid provider call. Uses the same matcher.
+    const { visible: unsaved, sessionExcludedCount } = excludeSavedFromResults(enriched, leads)
+    const { kept, excluded } = dedupeAndValidate(unsaved)
     const qualified = kept.map(b => ({ ...b, qualification: qualifyBusiness(b, result.niche) }))
-    return { validQualified: qualified, excludedInvalidDup: excluded.length }
-  }, [result])
+    return { validQualified: qualified, excludedInvalidDup: excluded.length, sessionExcludedCount }
+  }, [result, leads])
 
   // Apply filters, then sort. Both pure — the source arrays are never mutated.
   const { visible: filteredVisible, counts: filterCounts } = useMemo(
@@ -161,6 +165,9 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], 
         industry: nicheSearch.searchPhrase,
         location: location.trim(),
         limit: effectiveLimit,
+        // Exclude already-saved businesses at the provider so their slots are refilled
+        // with new businesses (Milestone 15C9). The user's own compact identity data.
+        excludeLeads: toExcludeDescriptors(leads),
       })
       // Retain the niche context of THIS search alongside the results, so the
       // niche used is stable even if the selector changes afterward.
@@ -248,6 +255,10 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], 
     selectedCount: selected.size,
     filterCounts,
   })
+  // Plain-language result message from the server's discovery metadata (§6/§7). The
+  // "new" count is the number of new discoverable businesses after exclusion + validation.
+  const discoveryMsg = result ? buildDiscoveryMessage(result.discoveryMeta, validQualified.length, sessionExcludedCount) : null
+  const meta = result?.discoveryMeta ?? null
   const activeFilterCount = ACTIVE_FILTER_KEYS.filter(k => filters[k] !== DEFAULT_FILTERS[k]).length
   const criteria = summarizeActiveCriteria(filters)
 
@@ -358,27 +369,28 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], 
         </div>
       )}
 
-      {!isLoading && result && result.businesses.length === 0 && (
+      {/* Zero unseen businesses remain — a VALID exhausted outcome, never an error (§7). */}
+      {!isLoading && result && validQualified.length === 0 && (
         <div className={styles.emptyResults}>
           <p className={styles.emptyText}>
-            No businesses were found for this search. Try a broader niche or location.
-          </p>
-        </div>
-      )}
-
-      {!isLoading && result && result.businesses.length > 0 && validQualified.length === 0 && (
-        <div className={styles.emptyResults}>
-          <p className={styles.emptyText}>
-            No valid businesses remained after removing duplicate or incomplete records.
+            {discoveryMsg?.text ?? 'No businesses were found for this search. Try a broader niche or location.'}
           </p>
         </div>
       )}
 
       {!isLoading && result && validQualified.length > 0 && (
         <>
+          {discoveryMsg && (
+            <p className={styles.discoveryMessage} role="status">
+              {discoveryMsg.text}
+              {meta?.providerExhausted && discoveryMsg.tone !== 'partial' && (
+                <span className={styles.exhaustedTag}> · available results exhausted</span>
+              )}
+            </p>
+          )}
           <div className={styles.resultsSummary}>
             <span className={styles.resultsCount}>
-              Showing {summary.visible} of {summary.valid} results
+              Showing {summary.visible} of {summary.valid} new results
             </span>
             {result.niche?.selectedNicheLabel && (
               <span className={styles.nicheBadge}>{result.niche.selectedNicheLabel}</span>
@@ -390,9 +402,16 @@ export default function LeadDiscoveryScreen({ onBack, onSendToBulk, leads = [], 
 
           <details className={styles.breakdown}>
             <summary className={styles.breakdownToggle}>
-              Result breakdown ({summary.totalReturned} returned by Google)
+              Result breakdown ({summary.valid} new{meta ? ` · ${meta.pagesAttempted} page${meta.pagesAttempted !== 1 ? 's' : ''} checked` : ''})
             </summary>
             <ul className={styles.breakdownList}>
+              {meta && <li>Already-saved leads excluded: {meta.savedLeadExclusionCount + sessionExcludedCount}</li>}
+              {meta && meta.permanentlyClosedExclusionCount > 0 && <li>Permanently closed excluded: {meta.permanentlyClosedExclusionCount}</li>}
+              {meta && meta.duplicateExclusionCount > 0 && <li>Duplicate provider records excluded: {meta.duplicateExclusionCount}</li>}
+              {meta && <li>Provider records scanned: {meta.providerResultCount}</li>}
+              {meta && (meta.providerExhausted || meta.stoppedBySafetyLimit || meta.stoppedByProviderError) && (
+                <li>Search stopped: {meta.providerExhausted ? 'available results exhausted' : meta.stoppedBySafetyLimit ? 'per-search page limit reached' : 'provider temporarily unavailable'}</li>
+              )}
               <li>Valid after dedupe / validation: {summary.valid}</li>
               <li>Excluded by filters: {summary.excludedByFilters}</li>
               <li>Hidden — closed: {filterCounts.closed}</li>

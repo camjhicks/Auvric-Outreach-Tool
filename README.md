@@ -1347,6 +1347,62 @@ Gmail/SMTP/OAuth/webhook integration are built here. Recommended next: begin rea
 inspect real generated drafts, record replies and outcomes, and build analytics only after
 real data exists. The ledger's read/write boundary is ready for a future database migration.
 
+## Discovery Exhaustion & Saved-Lead Exclusion (Milestone 15C9)
+
+Lead Discovery no longer wastes result slots on businesses you've already saved. It
+excludes saved leads up front and keeps paginating to fill their slots with new, unseen
+businesses — so a search returns the requested number of *new* leads whenever the area can
+supply them.
+
+- **Saved-lead exclusion (server-side, one identity system).** Before results are
+  returned, every discovered business is compared against your Saved Leads using the SAME
+  centralized identity service (`leadIdentity`) as Saved Leads and Outreach Memory —
+  imported directly on the server, never a second competing matcher. Matching uses the
+  strongest available signals (Google Place ID, phone + business name, website domain +
+  phone, business name + address). A shared host (Facebook, Wix, a directory, a franchise
+  system) never merges unrelated businesses, and separate locations stay distinct unless
+  identity evidence proves they are the same. The browser sends a compact, capped list of
+  its own saved-lead identity descriptors (no secrets) so the server can exclude them.
+- **Exhaustion loop.** Discovery requests successive provider pages and counts only NEW
+  (unsaved, non-duplicate, not-permanently-closed) businesses toward your requested target,
+  continuing until the target is filled, the provider runs out of pages, or a safety cap is
+  reached. Already-saved leads, duplicate provider records, and permanently-closed records
+  never consume a result slot.
+- **Broad inclusion.** A business is never dropped for lacking a website, reviews, a
+  rating, a phone, complete contact data, or a low qualification score. No-website,
+  low-review, newly-opened, phone-only, and incomplete-profile businesses all remain
+  discoverable and saveable; scoring and audit-readiness are handled separately.
+- **Closed-business rules.** Only `CLOSED_PERMANENTLY` businesses are excluded.
+  Temporarily-closed businesses are kept and flagged with a warning — temporary closure is
+  never silently treated as permanent. Missing hours / current-day-closed / unavailable
+  website / missing phone never cause exclusion.
+- **Result metadata.** Each search returns normalized metadata — `requestedResultCount`,
+  `returnedNewLeadCount`, `providerResultCount`, `savedLeadExclusionCount`,
+  `duplicateExclusionCount`, `permanentlyClosedExclusionCount`, `outOfScopeExclusionCount`,
+  `pagesAttempted`, `providerExhausted`, `stoppedBySafetyLimit`, `stoppedByProviderError` —
+  and the UI turns it into a plain summary (e.g. “Found 42 new businesses. 16 already-saved
+  leads were excluded. The available results appear to be exhausted.”). Raw provider
+  responses and secrets are never exposed.
+- **Zero results is valid.** When every match is already saved, duplicated, closed, or
+  unavailable, Discovery shows a clear exhausted message — never an error state.
+- **Session saves update live.** Saving a business from Discovery removes it from the
+  current result list immediately (no new paid provider call) and it stays excluded after
+  refresh and on the next overlapping search.
+- **Cost & rate-limit safety.** Centralized caps bound every search: max 20 results/page,
+  max 3 provider pages, and a hard 60-result ceiling — so a single Discovery action makes
+  **at most 3 Google Places Text Search calls** (Google's Text Search hard-caps a single
+  query at ~60 results). The provider's next-page-token timing, bounded retries, request
+  timeout, and server-side rate limiting are all preserved; the API key stays server-side.
+  The saved-lead exclusion payload uses a dedicated, still-bounded request-body limit
+  (512 KB) while every other route keeps the tight 32 KB default.
+- **Provider limitation (honest).** Because Google Places Text Search caps a single query
+  at ~60 results, one Discovery search cannot enumerate every business in a very large
+  area. The requested count is a target, not a promise. Broader coverage via controlled
+  geographic-subarea / niche-alias query variation is a documented future enhancement,
+  intentionally deferred here to avoid uncontrolled query explosions and extra provider
+  cost.
+- **No automatic outreach or sending** was added.
+
 ## Local setup
 
 ```bash
