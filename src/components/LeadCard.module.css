@@ -268,3 +268,16 @@
 .notesInput:focus {
   border-color: var(--color-primary);
 }
+
+/* Milestone 15C10 — Add to Call List action */
+.callBtn {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text, #e7ecf3);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.callBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.callBtn:hover:not(:disabled) { border-color: var(--color-accent, #7cc7ff); }

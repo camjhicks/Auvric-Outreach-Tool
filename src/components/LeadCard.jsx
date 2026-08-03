@@ -9,6 +9,8 @@ import { isProfileResearchEligible } from '../utils/profileResearch'
 import { RESEARCH_STATUS_LABEL } from '../config/profileResearch'
 import { deriveStatusForLead } from '../services/outreachHistoryStorage'
 import { formatDate } from '../utils/outreachMemory'
+import { reconcileOpportunity, hasValidPhone } from '../utils/opportunityReconciliation'
+import { AUDIT_WORKFLOW_LABEL } from '../utils/auditWorkflow'
 import styles from './LeadCard.module.css'
 
 function getDomain(url) {
@@ -25,6 +27,7 @@ function StatusChips({ lead }) {
   const researched = noWebsite && !!lead.profileResearchStatus && lead.profileResearchStatus !== 'not_researched'
   // Authoritative outreach memory: a lead with recorded outreach must never look untouched.
   const outreach = deriveStatusForLead(lead)
+  const overlay = reconcileOpportunity(lead)
   return (
     <div className={styles.chips}>
       {outreach.doNotContact ? (
@@ -32,6 +35,11 @@ function StatusChips({ lead }) {
       ) : outreach.hasInitialEmailSent ? (
         <span className={`${styles.chip} ${styles.chipPos}`}>Contacted {formatDate(outreach.initialEmailSentAt)}</span>
       ) : null}
+      {lead.auditWorkflowStatus && lead.auditWorkflowStatus !== 'not_audited' && (
+        <span className={`${styles.chip} ${lead.hasCompletedAudit ? styles.chipPos : styles.chipMuted}`}>{AUDIT_WORKFLOW_LABEL[lead.auditWorkflowStatus] ?? lead.auditWorkflowStatus}</span>
+      )}
+      {overlay.callRecommended && <span className={`${styles.chip} ${styles.chipPos}`}>Call recommended</span>}
+      {overlay.reclassified && <span className={styles.chip}>Priority: {overlay.effectiveClientTier}</span>}
       <span className={`${styles.chip} ${website === 'has' ? styles.chipPos : styles.chipMuted}`}>
         {WEBSITE_STATUS_LABEL[website] ?? 'Website unknown'}
       </span>
@@ -84,6 +92,7 @@ export default function LeadCard({
   lead, onStatusChange, onNotesChange, onDelete, onViewDetails,
   selectable = false, selected = false, onToggleSelect, onAudit, onResearchProfile,
   onAddToEmailQueue, queued = false, onOpenEmailQueue,
+  onAddToCallList, inCallList = false, onOpenCallList,
 }) {
   const [showNotes, setShowNotes] = useState(false)
   const [localNotes, setLocalNotes] = useState(lead.notes ?? '')
@@ -112,6 +121,11 @@ export default function LeadCard({
   const researchEligible = !auditEligible && isProfileResearchEligible(lead)
   const researched = !!lead.profileResearchStatus && lead.profileResearchStatus !== 'not_researched'
   const canMarkContacted = !CONTACTED_AND_BEYOND.has(lead.status)
+  // Reconciled opportunity + call routing (Milestone 15C10). A verified major problem on
+  // an active, reachable business is never left labelled "weak"; website-down/no-website
+  // with a phone is Call Recommended.
+  const overlay = reconcileOpportunity(lead)
+  const phoneOk = hasValidPhone(lead)
   const dateLabel = new Date(lead.dateSaved).toLocaleDateString(
     undefined, { month: 'short', day: 'numeric', year: 'numeric' }
   )
@@ -182,6 +196,13 @@ export default function LeadCard({
             queued
               ? <button className={styles.queuedBtn} onClick={() => onOpenEmailQueue && onOpenEmailQueue()}>✓ In Email Queue</button>
               : <button className={styles.emailBtn} onClick={() => onAddToEmailQueue(lead.id)}>Add to Email Queue</button>
+          )}
+          {onAddToCallList && (
+            inCallList
+              ? <button className={styles.queuedBtn} onClick={() => onOpenCallList && onOpenCallList()}>✓ In Call List</button>
+              : phoneOk
+                ? <button className={styles.callBtn} onClick={() => onAddToCallList(lead)}>{overlay.callRecommended ? 'Add to Call List (recommended)' : 'Add to Call List'}</button>
+                : <button className={styles.callBtn} disabled title="A valid phone number is required">Add to Call List</button>
           )}
           {canMarkContacted && (
             <button className={styles.contactBtn} onClick={() => setConfirmContact(true)}>

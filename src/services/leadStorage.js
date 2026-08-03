@@ -4,6 +4,10 @@ import { DEFAULT_CLIENT_OPPORTUNITY } from '../config/clientOpportunity.js'
 import { DEFAULT_SALES_REASONING } from '../config/salesReasoning.js'
 import { findMatch, mergeLeadRecords } from '../utils/leadIdentity.js'
 import { withProfileResearchDefaults } from '../utils/profileResearch.js'
+import {
+  defaultAuditWorkflowFields, completedFields as auditCompletedFields,
+  queuedFields as auditQueuedFields, auditingFields as auditAuditingFields,
+} from '../utils/auditWorkflow.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
@@ -153,7 +157,17 @@ function migrateLead(lead) {
     // Business Profile Research metadata (Milestone 15C3) — safe defaults for leads
     // that have not been researched. Never fabricated for legacy records.
     ...withProfileResearchDefaults(lead),
+    // Audit workflow lifecycle (Milestone 15C10) — back-filled from any legacy auditStatus.
+    ...defaultAuditWorkflowFields(lead),
   }
+}
+
+// A short human summary for the latest audit (stored on the lead, no raw HTML).
+function auditSummaryOf(result) {
+  return result?.auditSummary ?? result?.primaryAuditFinding ?? result?.siteHealth?.siteHealthSummary ?? null
+}
+function auditConfidenceOf(result) {
+  return result?.siteHealth?.siteHealthConfidence ?? result?.evidence?.contactPath?.contactPathConfidence ?? null
 }
 
 export function getLeads() {
@@ -226,17 +240,54 @@ export function saveLead({
   // Upsert: if this business is already saved, update it in place (no duplicate).
   const existing = getLeads()
   const match = findMatch(newLead, existing)
+  // Audit workflow lifecycle fields — derived from THIS result, preserving prior history.
+  const wf = auditCompletedFields(match ?? {}, {
+    auditStatus,
+    siteAvailabilityStatus: siteHealth?.siteAvailabilityStatus ?? null,
+    summary: siteHealth?.siteHealthSummary ?? null,
+    confidence: siteHealth?.siteHealthConfidence ?? null,
+    source: 'single_audit',
+  })
   let lead, leads
   if (match) {
     const { id, savedAt, dateSaved, dateDiscovered, ...incoming } = newLead
-    lead = mergeLeadRecords(match, incoming)
+    lead = { ...mergeLeadRecords(match, incoming), ...wf }
     leads = existing.map(l => (l.id === match.id ? lead : l))
   } else {
-    lead = newLead
+    lead = { ...newLead, ...wf }
     leads = [lead, ...existing]
   }
   setLeads(leads)
   return { lead, leads }
+}
+
+// Mark Saved Leads as queued for audit (Milestone 15C10, §2). Selecting a lead for
+// audit immediately reflects on the Saved Lead — no manual editing. Preserves history.
+export function queueLeadsForAudit(ids, { source = 'saved_leads' } = {}) {
+  const set = new Set(Array.isArray(ids) ? ids : [])
+  if (set.size === 0) return { leads: getLeads(), count: 0 }
+  let count = 0
+  const leads = getLeads().map(l => {
+    if (!set.has(l.id)) return l
+    count++
+    return { ...l, ...auditQueuedFields(l, { source }) }
+  })
+  setLeads(leads)
+  return { leads, count }
+}
+
+// Mark Saved Leads as actively auditing (increments the attempt count once).
+export function markLeadsAuditing(ids) {
+  const set = new Set(Array.isArray(ids) ? ids : [])
+  if (set.size === 0) return { leads: getLeads(), count: 0 }
+  let count = 0
+  const leads = getLeads().map(l => {
+    if (!set.has(l.id)) return l
+    count++
+    return { ...l, ...auditAuditingFields(l) }
+  })
+  setLeads(leads)
+  return { leads, count }
 }
 
 export function updateLead(id, updates) {
@@ -337,6 +388,8 @@ export function saveDiscoveryLead(business) {
     ...withOpportunityDefaults(null),
     ...withClientOpportunityDefaults(null),
     ...withSalesReasoningDefaults(null),
+    // Audit workflow lifecycle defaults (not audited yet — a save is not an audit).
+    ...defaultAuditWorkflowFields(null),
   }
 
   const existing = getLeads()
@@ -476,8 +529,20 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
     const metaId = typeof meta?.id === 'string' ? meta.id : null
     const existing = (metaId && current.find(l => l.id === metaId)) || findMatch({ ...fields, googlePlaceId: fields.googlePlaceId }, current)
 
+    // Audit workflow lifecycle from this result — never "audited" for a blocked/failed
+    // audit; preserves prior timestamps. The prior status may be `auditing` (attempt
+    // already counted) so we don't double-count.
+    const wf = auditCompletedFields(existing ?? {}, {
+      auditStatus,
+      siteAvailabilityStatus: result.siteHealth?.siteAvailabilityStatus ?? null,
+      summary: auditSummaryOf(result),
+      confidence: auditConfidenceOf(result),
+      source: 'bulk_audit',
+      countedAttempt: existing?.auditWorkflowStatus === 'auditing',
+    })
+
     if (existing) {
-      const merged = mergeLeadRecords(existing, fields)
+      const merged = { ...mergeLeadRecords(existing, fields), ...wf }
       current = current.map(l => (l.id === existing.id ? merged : l))
       updatedCount++
     } else {
@@ -487,6 +552,7 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
         outreachDraft: null, outreachSubject: null, outreachCTA: null,
         status: 'New', notes: '', lastContactedAt: null, nextFollowUpAt: null, followUpCount: 0,
         ...fields,
+        ...wf,
       }
       current = [record, ...current]
       savedCount++

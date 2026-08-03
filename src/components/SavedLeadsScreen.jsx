@@ -71,7 +71,13 @@ export default function SavedLeadsScreen({
   leads, onBack, onLeadsChange, selectedLeadId = null, onOpenLead, onCloseLead, onSendToBulk,
   emailQueue = [], onAddToEmailQueue, onAddManyToEmailQueue, onQueueChange, onOpenEmailQueue,
   onOpenProfileResearch,
+  callList = [], onAddToCallList, onOpenCallList,
 }) {
+  const callListedLeadIds = new Set((callList ?? []).map(e => e.savedLeadId).filter(Boolean))
+  function handleAddOneToCallList(lead) {
+    if (!onAddToCallList) return
+    onAddToCallList(lead)
+  }
   const restored = getSlice('savedLeads') ?? {}
   // Default to All Leads so a lead is always visible right after saving, whatever its
   // audit state; Needs Review / Audited are focused views the user opts into.
@@ -428,6 +434,9 @@ export default function SavedLeadsScreen({
               onAddToEmailQueue={onAddToEmailQueue ? handleAddOneToQueue : undefined}
               queued={queuedIds.has(lead.id)}
               onOpenEmailQueue={onOpenEmailQueue}
+              onAddToCallList={onAddToCallList ? handleAddOneToCallList : undefined}
+              inCallList={callListedLeadIds.has(lead.id)}
+              onOpenCallList={onOpenCallList}
             />
           ))}
         </div>

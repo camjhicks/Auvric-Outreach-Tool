@@ -1403,6 +1403,79 @@ supply them.
   cost.
 - **No automatic outreach or sending** was added.
 
+## Audit Sync, Opportunity Reclassification & Call List (Milestone 15C10)
+
+Saved Leads is now the central decision workspace. The Audit section is a quick
+information-gathering tool: as soon as an audit completes, the Saved Lead is classified
+automatically and Cameron returns to Saved Leads to decide — Email, Call, keep, or delete.
+
+- **Audit status lifecycle.** Each Saved Lead tracks its audit lifecycle
+  (`not_audited → queued_for_audit → auditing → audited / audit_partial / audit_blocked /
+  audit_failed / audit_retry_needed`) with timestamps, attempt count, source, result
+  version, failure reason, and `hasCompletedAudit`. Selecting a lead for audit updates it
+  automatically — no manual editing — and the status survives refresh and restart. A
+  blocked or failed audit is **never** recorded as successfully audited. Re-auditing
+  updates the latest result and version without erasing the first-completed timestamp or
+  prior history. Bulk audit updates every corresponding Saved Lead.
+- **Post-audit return.** Bulk-audit results persist to the Saved Leads, which reflect the
+  new statuses immediately (no refresh). Audit never auto-adds a lead to the Email Queue
+  or Call List.
+- **Scoring reconciliation (no more “weak + high opportunity” contradiction).** Three
+  concepts are kept separate — Business Qualification (is it a real, active, reachable
+  business?), Website Opportunity (how serious is the conversion problem?), and Client
+  Opportunity (how strongly to prioritise). A verified **major** conversion problem — no
+  visible CTA, no contact/booking/quote/appointment path, a broken form, a website that is
+  down, or no website — on an **active, reachable, non-disqualified** business lifts the
+  effective Client Opportunity (severe problems to High, softer ones to Qualified) so a
+  viable business is never left labelled “weak prospect”. Disqualifiers (permanently
+  closed, disqualified, recognized chain, do-not-contact) always win; a website problem
+  never overrides closure. Cosmetic-only weakness never creates high opportunity, and a
+  strong site with a working conversion path stays Low.
+- **Website-down → Call routing (§7).** When Scout verifies a website is down (or there is
+  no website) on an active business **with a valid phone** that is not do-not-contact,
+  permanently closed, or disqualified, the lead is marked **Call Recommended** with a
+  one-click **Add to Call List** and the reason: “Website appears unavailable. Confirm the
+  business is active and ask how customers currently reach them online.” Duplicate Call
+  List entries are prevented; the audit evidence is preserved; nothing is ever dialled.
+- **Call List (`/call-list`).** A dedicated route/nav for **manual calls only**. Every
+  entry requires a valid normalized phone — a lead without one cannot enter the Call List.
+  Duplicate entries are prevented via the ONE centralized identity service. Cards show the
+  phone (click-to-call `tel:` + copy), niche/location, audit + website status, Client /
+  Website Opportunity, the verified pain point, why it was added, last attempt, next
+  action, and DNC warnings, with filters and sorts.
+- **Generate Script (click-only).** A deterministic, niche-aware, evidence-safe call script
+  is generated only on a button click — greeting + business confirmation, a short
+  permission opener, one verified observation, one discovery question, response branches,
+  and one CTA. It never invents an owner name, claims a revenue loss, guarantees results,
+  insults the website, or claims a feature is broken without evidence. Only the reviewed
+  script is stored (never raw prompts or private reasoning); regeneration is manual.
+- **Start Call + outcome panel.** Start Call marks the entry `calling`, records the start
+  time, and increments the attempt count once (double-click guarded) — it never dials (a
+  `tel:` link is offered but user-controlled). After the call, an outcome is required. Each
+  outcome (No Answer, Voicemail, Not Interested, Interested, Callback Requested, Meeting
+  Scheduled, Email Requested, Email Provided, Wrong Number, Follow-Up Needed, Do Not Call,
+  Completed, Other) drives its own **conditional required fields** — e.g. Callback requires
+  a date/time, Meeting requires date/time + type (stored as a normalized record; no Google
+  Calendar), Email Provided requires a valid email marked `provided_during_call`. Wrong
+  Number invalidates only that number (a corrected number is allowed and history is kept).
+- **Call event ledger (`auvric_call_history`).** An append-oriented, versioned, identity-
+  keyed ledger records every call action (added, script generated, call started, each
+  outcome, corrections, removal, notes). It never stores raw provider responses, AI
+  prompts, private reasoning, or secrets. Duplicate events are prevented, prior outcomes
+  are never erased, and it survives refresh, restart, and **Reset Workspace**.
+- **Cross-channel coordination.** Interested / Email Provided can move a lead to the Email
+  Queue (records only — no email sent). Meeting Scheduled ends ordinary call suggestions.
+  **Do Not Call** blocks future calls but does **not** block email unless full Do Not
+  Contact is chosen; full Do Not Contact blocks both and preserves the reason and history.
+  A lead already in the Email Queue is shown as such.
+- **Deletion & preservation.** Deleting a Saved Lead asks for confirmation, removes the
+  active Call List entry, and never erases the permanent outreach or call event history —
+  do-not-contact and do-not-call protections persist.
+- **No automatic calling, no automatic email sending, no phone provider, and no
+  Gmail/SMTP/OAuth/webhook integration.** Current limitation: call scripts use the
+  deterministic generator (an AI variant is a documented future option); meeting records
+  are local (no calendar integration).
+
 ## Local setup
 
 ```bash

@@ -8,6 +8,7 @@ import FollowUpQueueScreen from './components/FollowUpQueueScreen'
 import BulkAuditScreen from './components/BulkAuditScreen'
 import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import EmailQueueScreen from './components/EmailQueueScreen'
+import CallListScreen from './components/CallListScreen'
 import ProfileResearchScreen from './components/ProfileResearchScreen'
 import ConfirmModal from './components/ConfirmModal'
 import { runAudit } from './services/auditApi'
@@ -30,6 +31,8 @@ import {
 } from './services/leadStorage'
 import { getQueue, addToQueue, addManyToQueue, reconcileWithLeads } from './services/emailQueueStorage'
 import { migrateFromEmailQueue } from './services/outreachHistoryStorage'
+import { getCallList, addToCallList, reconcileCallListWithLeads } from './services/callListStorage'
+import { reconcileOpportunity } from './utils/opportunityReconciliation'
 import styles from './App.module.css'
 
 export default function App() {
@@ -54,6 +57,7 @@ export default function App() {
   const [leads, setLeads] = useState(() => getLeads())
   const [leadsGenerated, setLeadsGenerated] = useState(() => getLeadsGenerated())
   const [emailQueue, setEmailQueue] = useState(() => getQueue())
+  const [callList, setCallList] = useState(() => getCallList())
 
   const [outreachDraft, setOutreachDraft] = useState(null)
   const [isGeneratingOutreach, setIsGeneratingOutreach] = useState(false)
@@ -71,7 +75,22 @@ export default function App() {
   useEffect(() => {
     const { removedCount, queue } = reconcileWithLeads(leads)
     if (removedCount > 0) setEmailQueue(queue)
+    const rc = reconcileCallListWithLeads(leads)
+    if (rc.removedCount > 0) setCallList(rc.list)
   }, [leads])
+
+  // Add a Saved Lead to the Call List (Milestone 15C10). Requires a valid phone; deduped
+  // by identity. Carries the reconciled routing (call reason / priority). Never dials.
+  function handleAddToCallList(lead, opts = {}) {
+    const overlay = reconcileOpportunity(lead)
+    const res = addToCallList(lead, {
+      source: opts.source ?? (overlay.callRecommended ? 'website_down_audit' : 'manual'),
+      callReason: opts.callReason ?? overlay.callReason ?? null,
+      overlay,
+    })
+    if (res.list) setCallList(res.list)
+    return res
+  }
 
   // One-time legacy backfill (Milestone 15C7): reconstruct permanent Outreach History
   // events from existing Email Queue records (sent timestamps, follow-up stage, outcomes,
@@ -237,6 +256,7 @@ export default function App() {
   const goLeads = () => navigateScreen(SCREENS.LEADS)
   const goQueue = () => navigateScreen(SCREENS.QUEUE)
   const goEmailQueue = () => navigateScreen(SCREENS.EMAIL_QUEUE)
+  const goCallList = () => navigateScreen(SCREENS.CALL_LIST)
   const goProfileResearch = () => navigateScreen(SCREENS.PROFILE_RESEARCH)
   const goDiscovery = () => navigateScreen(SCREENS.DISCOVERY)
   // Navigating to Bulk preserves any existing Bulk working state (it is restored
@@ -280,6 +300,7 @@ export default function App() {
     onViewLeads: goLeads,
     onViewQueue: goQueue,
     onViewEmailQueue: goEmailQueue,
+    onViewCallList: goCallList,
     onViewProfileResearch: goProfileResearch,
     onViewBulk: goBulk,
     onViewDiscovery: goDiscovery,
@@ -314,6 +335,9 @@ export default function App() {
           onQueueChange={setEmailQueue}
           onOpenEmailQueue={goEmailQueue}
           onOpenProfileResearch={goProfileResearch}
+          callList={callList}
+          onAddToCallList={handleAddToCallList}
+          onOpenCallList={goCallList}
         />
         {resetModal}
       </div>
@@ -333,6 +357,22 @@ export default function App() {
           onOpenLead={openLead}
         />
         {resetModal}
+      </div>
+    )
+  }
+
+  if (screen === SCREENS.CALL_LIST) {
+    return (
+      <div className={styles.app}>
+        <Header {...headerProps} onViewCallList={undefined} />
+        <CallListScreen
+          callList={callList}
+          leads={leads}
+          onCallListChange={setCallList}
+          onOpenLead={openLead}
+          onBack={goLeads}
+          onAddToEmailQueue={handleAddToEmailQueue}
+        />
       </div>
     )
   }
