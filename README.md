@@ -8,6 +8,50 @@ outreach drafts, and manage a lightweight CRM.
 > metadata) lives in your **browser's localStorage** — see
 > [Data & persistence](#data--persistence) before relying on it.
 
+## Saved Leads Audit Pipeline (Milestone 15C11)
+
+The Saved Leads Hub now has **one authoritative field** that decides which primary section a
+lead belongs to: `auditPipelineStatus ∈ { un_audited, audit_queued, auditing, audited }`
+(`src/utils/auditPipeline.js`). Everything else about an audit — *needs review, partial,
+blocked, website error, failed* — is a **secondary** detail (`auditReviewStatus`) shown
+*inside* Audited, never a primary section.
+
+**The workflow.** A saved lead starts in **Un-Audited**. You bulk-select the un-audited
+queue, run **Bulk Audit**, and every finished lead **moves to Audited automatically** — the
+moment the audit produces *any* stored result (complete, partial, website error, blocked,
+unavailable, needs-review). A processed lead never silently stays in the un-audited selection
+queue, and an audited lead never reappears there. Primary sections: **Un-Audited / Audited /
+All Leads** (plus a supplementary **Profile Researched** tab), each with a live count.
+
+**"Needs Review" is a secondary filter, not a section.** Inside Audited, review-status chips
+filter by *All Audited / Clear / Needs Review / Partial / Website Error / Audit Failed / Manual
+Review*. Each audited card shows its exact review reason (e.g. *"Only homepage evidence was
+available."*).
+
+**Functional sorting.** Every sort option produces a deterministic visible order (pure, stable,
+never mutating the input; ties broken by name then a stable index). Supported: Newest/Oldest
+Saved, Name A–Z / Z–A, Highest Client/Website Opportunity, Highest/Lowest Review Count,
+Highest/Lowest Rating, Most Recently Audited, Oldest Audit, Website Errors First, Needs Review
+First, Un-Audited First, and Call Recommended First. An unknown mode falls back to the
+documented default rather than silently leaving the order unchanged.
+
+**Automatic website-error → Call List routing (§10).** When an audit finds the site errored or
+was unavailable, the lead is **automatically added to the Call List** (source
+`website_error_audit`, with a call reason to confirm the business is active and learn how
+customers reach them online) — *only* when it's active, has a valid phone, and isn't closed /
+disqualified / already listed. No valid phone → the lead **stays Audited** and is surfaced as
+needing a manual phone. Nothing is ever auto-emailed or auto-dialled.
+
+**Bulk Audit completion summary (§5).** After a run: *"Bulk Audit complete: N businesses moved
+to Audited. X Clear, Y Needs Review, Z Website Errors, W Partial"*, the count of website-error
+leads routed to the Call List, and a **Return to Un-Audited Leads** button for the next batch.
+
+**Migration is idempotent (§12).** Existing leads back-fill their pipeline fields lazily on
+read (`migrateLead`); re-migrating an already-migrated lead yields identical values. Legacy
+leads with any stored audit become Audited; leads with no audit stay Un-Audited. This milestone
+replaces the earlier behaviour where audited leads could remain stuck under "Needs Review" and
+where several sort options left the order unchanged.
+
 ## Outreach Memory — release (Milestone 15C8)
 
 The **Outreach Memory & Duplicate-Send Protection** system (Milestone 15C7) is validated

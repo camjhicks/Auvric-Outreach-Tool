@@ -9,6 +9,17 @@ import {
   queuedFields as auditQueuedFields, auditingFields as auditAuditingFields,
   workflowFromAuditStatus, isCompletedWorkflow,
 } from '../utils/auditWorkflow.js'
+import { pipelineFields, derivePipeline } from '../utils/auditPipeline.js'
+import { reconcileOpportunity } from '../utils/opportunityReconciliation.js'
+import { addToCallList, isInCallList } from './callListStorage.js'
+
+// Automatic website-error → Call List routing copy (Milestone 15C11, §10). A website that
+// errored/was unavailable during the audit means the business may still be active but
+// unreachable online — a call confirms that and learns how customers currently reach them.
+export const WEBSITE_ERROR_CALL_REASON =
+  'The business website returned an error or was unavailable. Call to confirm the business is active and ask how customers currently reach them online.'
+export const WEBSITE_ERROR_NO_PHONE_NOTE =
+  'Website Error: No valid phone available for Call List.'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
@@ -160,6 +171,12 @@ function migrateLead(lead) {
     ...withProfileResearchDefaults(lead),
     // Audit workflow lifecycle (Milestone 15C10) — back-filled from any legacy auditStatus.
     ...defaultAuditWorkflowFields(lead),
+    // Authoritative audit-pipeline fields (Milestone 15C11). Idempotently DERIVED from the
+    // fields above, so migrating an already-migrated lead yields identical values — the ONE
+    // field (auditPipelineStatus) that decides the primary Saved-Leads section, plus the
+    // secondary review details. Legacy leads with any stored audit become "audited"; leads
+    // with no audit stay "un_audited".
+    ...pipelineFields(lead),
   }
 }
 
@@ -253,11 +270,12 @@ export function saveLead({
   if (match) {
     const { id, savedAt, dateSaved, dateDiscovered, ...incoming } = newLead
     lead = { ...mergeLeadRecords(match, incoming), ...wf }
-    leads = existing.map(l => (l.id === match.id ? lead : l))
   } else {
     lead = { ...newLead, ...wf }
-    leads = [lead, ...existing]
   }
+  // Derive the authoritative pipeline fields from the finalized workflow/audit fields (15C11).
+  lead = { ...lead, ...pipelineFields(lead) }
+  leads = match ? existing.map(l => (l.id === match.id ? lead : l)) : [lead, ...existing]
   setLeads(leads)
   return { lead, leads }
 }
@@ -392,20 +410,23 @@ export function saveDiscoveryLead(business) {
     // Audit workflow lifecycle defaults (not audited yet — a save is not an audit).
     ...defaultAuditWorkflowFields(null),
   }
+  // Authoritative pipeline fields (15C11) — an un-audited save derives `un_audited`.
+  const stampedRecord = { ...record, ...pipelineFields(record) }
 
   const existing = getLeads()
-  const match = findMatch(record, existing)
+  const match = findMatch(stampedRecord, existing)
   if (match) {
     // Repeat save → merge safe newer non-empty metadata; never overwrite audit data.
-    const { id, savedAt, dateSaved, dateDiscovered, auditStatus, ...incoming } = record
-    const merged = mergeLeadRecords(match, incoming)
+    const { id, savedAt, dateSaved, dateDiscovered, auditStatus, ...incoming } = stampedRecord
+    const base = mergeLeadRecords(match, incoming)
+    const merged = { ...base, ...pipelineFields(base) }
     const leads = existing.map(l => (l.id === match.id ? merged : l))
     setLeads(leads)
     return { lead: merged, leads, wasUpdate: true }
   }
-  const leads = [record, ...existing]
+  const leads = [stampedRecord, ...existing]
   setLeads(leads)
-  return { lead: record, leads, wasUpdate: false }
+  return { lead: stampedRecord, leads, wasUpdate: false }
 }
 
 /**
@@ -543,11 +564,12 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
     })
 
     if (existing) {
-      const merged = { ...mergeLeadRecords(existing, fields), ...wf }
+      const base = { ...mergeLeadRecords(existing, fields), ...wf }
+      const merged = { ...base, ...pipelineFields(base) }
       current = current.map(l => (l.id === existing.id ? merged : l))
       updatedCount++
     } else {
-      const record = {
+      const base = {
         id: crypto.randomUUID(),
         dateSaved: now, savedAt: now, updatedAt: now, dateDiscovered: meta ? (meta.dateDiscovered ?? null) : null,
         outreachDraft: null, outreachSubject: null, outreachCTA: null,
@@ -555,6 +577,7 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
         ...fields,
         ...wf,
       }
+      const record = { ...base, ...pipelineFields(base) }
       current = [record, ...current]
       savedCount++
     }
@@ -595,6 +618,32 @@ function alreadySynced(lead, result) {
     lead.latestAuditStatus === status &&
     (lead.siteAvailabilityStatus ?? null) === (result?.siteHealth?.siteAvailabilityStatus ?? null) &&
     Number.isInteger(lead.auditResultVersion) && lead.auditResultVersion >= 1
+}
+
+/**
+ * Automatically route a website-error Saved Lead to the Call List (Milestone 15C11, §10).
+ * Eligibility: active business + valid phone + not disqualified / permanently closed / DNC /
+ * already in the list. Uses the SAME reconciliation + centralized identity dedup as the manual
+ * flow, and NEVER dials. A lead with no valid phone stays Audited and is reported as `no_phone`.
+ * @returns {{ status: 'routed'|'already_in_list'|'no_phone'|'ineligible', entry: object|null }}
+ */
+export function routeWebsiteErrorToCallList(lead) {
+  if (!lead) return { status: 'ineligible', entry: null }
+  const overlay = reconcileOpportunity(lead)
+  // Never auto-route a disqualified / permanently-closed / inactive / do-not-contact lead.
+  if (overlay.disqualified || !overlay.isActive || lead.doNotContact || lead.doNotCall) {
+    return { status: 'ineligible', entry: null }
+  }
+  if (isInCallList(lead)) return { status: 'already_in_list', entry: null }
+  const res = addToCallList(lead, {
+    source: 'website_error_audit',
+    callReason: WEBSITE_ERROR_CALL_REASON,
+    overlay,
+  })
+  if (res.added) return { status: 'routed', entry: res.entry }
+  if (res.reason === 'already_in_list') return { status: 'already_in_list', entry: res.entry }
+  if (res.reason === 'no_valid_phone') return { status: 'no_phone', entry: null }
+  return { status: 'ineligible', entry: null }
 }
 
 /**
@@ -641,7 +690,13 @@ export function syncBulkAuditResults(results, discoveryByUrl = null, { runStarte
     savedCount = res.savedCount + res.updatedCount
   }
 
-  const summary = { audited: 0, partial: 0, blocked: 0, failed: 0, unmatched: 0, alreadySynced: 0, newerExists: 0, total: list.length }
+  const summary = {
+    audited: 0, partial: 0, blocked: 0, failed: 0, unmatched: 0, alreadySynced: 0, newerExists: 0, total: list.length,
+    // Pipeline-based completion breakdown for the §5 summary line + §10 call routing.
+    movedToAudited: 0, clear: 0, needsReview: 0, websiteError: 0,
+    callRouted: 0, callNoPhone: 0, callAlreadyListed: 0,
+  }
+  const leadById = new Map(leads.map(l => [l.id, l]))
   for (const r of perResult) {
     if (r.syncStatus === 'no_match') summary.unmatched++
     else if (r.syncStatus === 'already_saved') summary.alreadySynced++
@@ -651,7 +706,30 @@ export function syncBulkAuditResults(results, discoveryByUrl = null, { runStarte
     else if (r.auditWorkflow === 'audit_partial') summary.partial++
     else if (r.auditWorkflow === 'audit_blocked') summary.blocked++
     else if (r.auditWorkflow === 'audit_failed' || r.auditWorkflow === 'audit_retry_needed') summary.failed++
+
+    // Pipeline-based breakdown + automatic website-error Call List routing (§5/§10). Runs for
+    // every matched lead (idempotent — Call List dedups by identity), so a re-run never
+    // double-adds. A website-error lead is routed to the Call List when eligible; when it has
+    // no valid phone it stays Audited and is surfaced as needing a manual phone.
+    const lead = r.savedLeadId ? leadById.get(r.savedLeadId) : null
+    if (!lead) continue
+    const p = derivePipeline(lead)
+    if (p.auditPipelineStatus !== 'audited') continue
+    summary.movedToAudited++
+    if (p.isWebsiteError) summary.websiteError++
+    else if (p.auditReviewStatus === 'clear') summary.clear++
+    else if (p.manualReviewRequired) summary.needsReview++
+
+    if (p.isWebsiteError) {
+      const routed = routeWebsiteErrorToCallList(lead)
+      r.callRouting = routed.status
+      if (routed.status === 'routed') summary.callRouted++
+      else if (routed.status === 'no_phone') { summary.callNoPhone++; r.callRoutingNote = WEBSITE_ERROR_NO_PHONE_NOTE }
+      else if (routed.status === 'already_in_list') summary.callAlreadyListed++
+    }
   }
+  // Refresh the leads snapshot in case routing wrote Call List entries (leads themselves are
+  // unchanged by routing, but re-read keeps callers authoritative).
   return { summary, perResult, leads, savedCount }
 }
 

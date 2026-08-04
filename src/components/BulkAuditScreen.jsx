@@ -45,7 +45,7 @@ function parseInput(text) {
   return { valid: capped, warnings }
 }
 
-export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
+export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange, onReturnToUnAudited }) {
   // Restore transient Bulk Audit working state from the session slice (Milestone
   // 15B2C): the input, the discovery metadata seeded from Lead Discovery, the
   // already-completed compact audit results, and the selection. Website audits are
@@ -312,9 +312,27 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
         <>
           {syncSummary && (
             <div className={styles.syncSummary} role="status">
-              Bulk Audit complete: {syncSummary.audited} Audited, {syncSummary.partial} Partial, {syncSummary.blocked} Blocked, {syncSummary.failed} Failed
-              {syncSummary.unmatched > 0 ? `, ${syncSummary.unmatched} unable to match to a Saved Lead` : ''}.
-              {' '}Results are saved to Saved Leads automatically.
+              <p className={styles.syncSummaryLine}>
+                Bulk Audit complete: {syncSummary.movedToAudited} business{syncSummary.movedToAudited !== 1 ? 'es' : ''} moved to Audited.
+                {' '}{syncSummary.clear} Clear, {syncSummary.needsReview} Needs Review, {syncSummary.websiteError} Website Error{syncSummary.websiteError !== 1 ? 's' : ''}, {syncSummary.partial} Partial.
+              </p>
+              {(syncSummary.callRouted > 0 || syncSummary.callNoPhone > 0) && (
+                <p className={styles.syncSummarySub}>
+                  {syncSummary.callRouted > 0 && `${syncSummary.callRouted} website-error lead${syncSummary.callRouted !== 1 ? 's' : ''} added to the Call List. `}
+                  {syncSummary.callNoPhone > 0 && `${syncSummary.callNoPhone} website-error lead${syncSummary.callNoPhone !== 1 ? 's have' : ' has'} no valid phone for the Call List.`}
+                </p>
+              )}
+              {syncSummary.unmatched > 0 && (
+                <p className={styles.syncSummarySub}>
+                  {syncSummary.unmatched} result{syncSummary.unmatched !== 1 ? 's' : ''} could not be matched to a Saved Lead.
+                </p>
+              )}
+              <p className={styles.syncSummarySub}>Results are saved to Saved Leads automatically.</p>
+              {onReturnToUnAudited && (
+                <button className={styles.returnBtn} onClick={onReturnToUnAudited}>
+                  Return to Un-Audited Leads →
+                </button>
+              )}
             </div>
           )}
           <div className={styles.resultsHeader}>

@@ -10,40 +10,57 @@ import { getFollowUpUpdate } from '../utils/followUp'
 import {
   SECTIONS, DEFAULT_HUB_FILTERS, applyHubView, sortSavedLeads, partitionForAudit,
 } from '../utils/savedLeadsView'
+import { isAuditInFlight } from '../utils/auditPipeline'
 import styles from './SavedLeadsScreen.module.css'
 
+// Primary sections (Milestone 15C11): the operational separation is Un-Audited / Audited /
+// All Leads. Profile Researched remains a supplementary tab for the no-website workflow.
 const SECTION_TABS = [
-  { key: SECTIONS.NEEDS_REVIEW, label: 'Needs Review', countKey: 'needs_review' },
-  { key: SECTIONS.AUDITED, label: 'Website Audited', countKey: 'audited' },
+  { key: SECTIONS.UN_AUDITED, label: 'Un-Audited', countKey: 'un_audited' },
+  { key: SECTIONS.AUDITED, label: 'Audited', countKey: 'audited' },
   { key: SECTIONS.PROFILE_RESEARCHED, label: 'Profile Researched', countKey: 'profile_researched' },
   { key: SECTIONS.ALL, label: 'All Leads', countKey: 'all' },
 ]
 const SECTION_KEYS = SECTION_TABS.map(t => t.key)
 
-// Client Opportunity + Website Opportunity scores are 0–100 (not percentages).
+// Functional sorting (Milestone 15C11, §8). Every value maps to a deterministic comparator
+// in sortSavedLeads — no option silently leaves the order unchanged.
 const SORT_OPTIONS = [
-  { value: 'client_desc', label: 'Client score (high → low)' },
-  { value: 'client_asc', label: 'Client score (low → high)' },
-  { value: 'qual_desc', label: 'Qualification (high → low)' },
-  { value: 'website_desc', label: 'Website opportunity (high → low)' },
-  { value: 'reviews_desc', label: 'Most reviews' },
-  { value: 'rating_desc', label: 'Highest rating' },
   { value: 'newest', label: 'Newest saved' },
   { value: 'oldest', label: 'Oldest saved' },
-  { value: 'name_asc', label: 'Name (A → Z)' },
-  { value: 'name_desc', label: 'Name (Z → A)' },
-  { value: 'audited_first', label: 'Audited first' },
-  { value: 'unaudited_first', label: 'Unaudited first' },
-  { value: 'website_first', label: 'Has website first' },
-  { value: 'nowebsite_first', label: 'No website first' },
-  { value: 'email_first', label: 'Email found first' },
+  { value: 'name_asc', label: 'Business name (A → Z)' },
+  { value: 'name_desc', label: 'Business name (Z → A)' },
+  { value: 'client_desc', label: 'Highest client opportunity' },
+  { value: 'website_desc', label: 'Highest website opportunity' },
+  { value: 'reviews_desc', label: 'Highest review count' },
+  { value: 'reviews_asc', label: 'Lowest review count' },
+  { value: 'rating_desc', label: 'Highest rating' },
+  { value: 'rating_asc', label: 'Lowest rating' },
+  { value: 'audit_recent', label: 'Most recently audited' },
+  { value: 'audit_oldest', label: 'Oldest audit' },
+  { value: 'website_errors_first', label: 'Website errors first' },
+  { value: 'needs_review_first', label: 'Needs review first' },
+  { value: 'unaudited_first', label: 'Un-audited first' },
+  { value: 'call_recommended_first', label: 'Call recommended first' },
+]
+
+// Secondary review-status filter chips shown INSIDE the Audited section (§7). "Needs Review"
+// is a secondary badge/filter here — never a primary section.
+const REVIEW_FILTER_CHIPS = [
+  { value: 'all', label: 'All Audited' },
+  { value: 'clear', label: 'Clear' },
+  { value: 'needs_review', label: 'Needs Review' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'website_error', label: 'Website Error' },
+  { value: 'failed', label: 'Audit Failed' },
+  { value: 'manual_review', label: 'Manual Review' },
 ]
 
 const AUDIT_FILTER_OPTIONS = [
   { value: 'all', label: 'Any audit status' },
-  { value: 'needs_review', label: 'Needs review (unaudited)' },
+  { value: 'un_audited', label: 'Un-audited' },
   { value: 'audited', label: 'Audited' },
-  { value: 'partial_blocked', label: 'Partial / blocked / failed' },
+  { value: 'partial_blocked', label: 'Partial / blocked / website error' },
   { value: 'no_website', label: 'No website' },
 ]
 const WEBSITE_FILTER_OPTIONS = [
@@ -79,10 +96,10 @@ export default function SavedLeadsScreen({
     onAddToCallList(lead)
   }
   const restored = getSlice('savedLeads') ?? {}
-  // Default to All Leads so a lead is always visible right after saving, whatever its
-  // audit state; Needs Review / Audited are focused views the user opts into.
+  // Default to Un-Audited (§6): a freshly saved lead lands in the un-audited queue, the
+  // user bulk-audits it, and every finished lead moves to Audited automatically.
   const [section, setSection] = useState(
-    SECTION_KEYS.includes(restored.section) ? restored.section : SECTIONS.ALL
+    SECTION_KEYS.includes(restored.section) ? restored.section : SECTIONS.UN_AUDITED
   )
   const [filters, setFilters] = useState(() => ({
     ...DEFAULT_HUB_FILTERS,
@@ -146,10 +163,17 @@ export default function SavedLeadsScreen({
   const filtersActive =
     filters.auditStatus !== 'all' || filters.websiteStatus !== 'all' ||
     filters.phoneStatus !== 'all' || filters.emailStatus !== 'all' || filters.tier !== 'all' ||
-    query.trim() !== ''
+    filters.reviewStatus !== 'all' || query.trim() !== ''
 
   function setFilter(key, value) {
     setFilters(f => ({ ...f, [key]: value }))
+  }
+
+  // Switch primary section. Leaving Audited clears the secondary review filter so it never
+  // hides leads in Un-Audited / All (the review filter is only meaningful inside Audited).
+  function changeSection(key) {
+    setSection(key)
+    if (key !== SECTIONS.AUDITED && filters.reviewStatus !== 'all') setFilter('reviewStatus', 'all')
   }
 
   function handleResetFilters() {
@@ -157,7 +181,12 @@ export default function SavedLeadsScreen({
     setQuery('')
   }
 
+  // A lead that is queued or actively auditing cannot be (re)selected for audit (§9).
+  const isSelectable = (lead) => !isAuditInFlight(lead)
+
   function toggleSelect(id) {
+    const lead = leads.find(l => l.id === id)
+    if (lead && !isSelectable(lead)) return
     setSelected(prev => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
@@ -168,7 +197,7 @@ export default function SavedLeadsScreen({
   function selectAllVisible() {
     setSelected(prev => {
       const next = new Set(prev)
-      for (const l of sorted) next.add(l.id)
+      for (const l of sorted) if (isSelectable(l)) next.add(l.id)
       return next
     })
   }
@@ -268,13 +297,30 @@ export default function SavedLeadsScreen({
             role="tab"
             aria-selected={section === tab.key}
             className={`${styles.tab} ${section === tab.key ? styles.tabActive : ''}`}
-            onClick={() => setSection(tab.key)}
+            onClick={() => changeSection(tab.key)}
           >
             {tab.label}
             <span className={styles.tabCount}>{counts[tab.countKey]}</span>
           </button>
         ))}
       </div>
+
+      {/* Secondary review-status chips — only inside Audited (§7). "Needs Review" is a
+          secondary filter here, never a primary section. */}
+      {section === SECTIONS.AUDITED && (
+        <div className={styles.reviewChips} role="group" aria-label="Filter audited leads by review status">
+          {REVIEW_FILTER_CHIPS.map(chip => (
+            <button
+              key={chip.value}
+              className={`${styles.reviewChip} ${filters.reviewStatus === chip.value ? styles.reviewChipActive : ''}`}
+              aria-pressed={filters.reviewStatus === chip.value}
+              onClick={() => setFilter('reviewStatus', chip.value)}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={styles.filterRow}>
         <SearchBar value={query} onChange={setQuery} />
@@ -426,7 +472,7 @@ export default function SavedLeadsScreen({
               onNotesChange={handleNotesChange}
               onDelete={handleDelete}
               onViewDetails={id => onOpenLead && onOpenLead(id)}
-              selectable
+              selectable={isSelectable(lead)}
               selected={selected.has(lead.id)}
               onToggleSelect={toggleSelect}
               onAudit={onSendToBulk ? handleAuditOne : undefined}

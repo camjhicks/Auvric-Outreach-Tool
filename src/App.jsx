@@ -420,6 +420,11 @@ export default function App() {
           onBack={goHome}
           leads={leads}
           onLeadsChange={handleLeadsChange}
+          onReturnToUnAudited={() => {
+            // Open Saved Leads on the Un-Audited section for the next batch (§5).
+            setSlice('savedLeads', { ...(getSlice('savedLeads') ?? {}), section: 'un_audited' })
+            goLeads()
+          }}
         />
         {resetModal}
       </div>

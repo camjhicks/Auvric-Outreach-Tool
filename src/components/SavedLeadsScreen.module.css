@@ -97,6 +97,38 @@
   color: var(--color-primary);
 }
 
+/* Secondary review-status filter chips (shown inside Audited). */
+.reviewChips {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin: 0.1rem 0 0.2rem;
+}
+
+.reviewChip {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.reviewChip:hover {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+}
+
+.reviewChipActive {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  background: #1a1f35;
+}
+
 .filterRow {
   display: flex;
   gap: 0.75rem;

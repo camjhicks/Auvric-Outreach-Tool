@@ -11,6 +11,7 @@ import { deriveStatusForLead } from '../services/outreachHistoryStorage'
 import { formatDate } from '../utils/outreachMemory'
 import { reconcileOpportunity, hasValidPhone } from '../utils/opportunityReconciliation'
 import { AUDIT_WORKFLOW_LABEL } from '../utils/auditWorkflow'
+import { derivePipeline, AUDIT_REVIEW, AUDIT_REVIEW_LABEL } from '../utils/auditPipeline'
 import styles from './LeadCard.module.css'
 
 function getDomain(url) {
@@ -28,6 +29,10 @@ function StatusChips({ lead }) {
   // Authoritative outreach memory: a lead with recorded outreach must never look untouched.
   const outreach = deriveStatusForLead(lead)
   const overlay = reconcileOpportunity(lead)
+  // Authoritative pipeline (15C11): show the secondary review status + exact reason for
+  // audited leads that need attention (§11). "Clear" audits need no extra badge.
+  const pipeline = derivePipeline(lead)
+  const showReview = pipeline.auditPipelineStatus === 'audited' && pipeline.auditReviewStatus !== AUDIT_REVIEW.CLEAR
   return (
     <div className={styles.chips}>
       {outreach.doNotContact ? (
@@ -37,6 +42,14 @@ function StatusChips({ lead }) {
       ) : null}
       {lead.auditWorkflowStatus && lead.auditWorkflowStatus !== 'not_audited' && (
         <span className={`${styles.chip} ${lead.hasCompletedAudit ? styles.chipPos : styles.chipMuted}`}>{AUDIT_WORKFLOW_LABEL[lead.auditWorkflowStatus] ?? lead.auditWorkflowStatus}</span>
+      )}
+      {showReview && (
+        <span
+          className={`${styles.chip} ${styles.chipMuted}`}
+          title={pipeline.auditReviewReason ?? undefined}
+        >
+          {AUDIT_REVIEW_LABEL[pipeline.auditReviewStatus] ?? pipeline.auditReviewStatus}
+        </span>
       )}
       {overlay.callRecommended && <span className={`${styles.chip} ${styles.chipPos}`}>Call recommended</span>}
       {overlay.reclassified && <span className={styles.chip}>Priority: {overlay.effectiveClientTier}</span>}
@@ -126,6 +139,12 @@ export default function LeadCard({
   // with a phone is Call Recommended.
   const overlay = reconcileOpportunity(lead)
   const phoneOk = hasValidPhone(lead)
+  // Exact review reason for an audited lead that needs attention (§11).
+  const leadPipeline = derivePipeline(lead)
+  const reviewReason = leadPipeline.auditPipelineStatus === 'audited' &&
+    leadPipeline.auditReviewStatus !== AUDIT_REVIEW.CLEAR
+    ? leadPipeline.auditReviewReason
+    : null
   const dateLabel = new Date(lead.dateSaved).toLocaleDateString(
     undefined, { month: 'short', day: 'numeric', year: 'numeric' }
   )
@@ -164,6 +183,10 @@ export default function LeadCard({
         </div>
 
         <StatusChips lead={lead} />
+
+        {reviewReason && (
+          <p className={styles.reviewReason}>{reviewReason}</p>
+        )}
 
         {lead.bestEmail
           ? <a href={`mailto:${lead.bestEmail}`} className={styles.bestEmail}>{lead.bestEmail}</a>

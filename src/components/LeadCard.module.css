@@ -134,6 +134,14 @@
   font-style: italic;
 }
 
+/* Exact audit review reason for a lead that needs attention (Milestone 15C11). */
+.reviewReason {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--color-muted);
+  margin: 0.2rem 0 0;
+}
+
 /* Footer */
 .footer {
   padding: 0.65rem 1.25rem;
