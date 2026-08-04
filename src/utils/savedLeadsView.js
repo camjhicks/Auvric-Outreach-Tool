@@ -10,6 +10,7 @@ import { isProfileResearchEligible, effectivePriorityScore, effectivePriorityTie
 import { RESEARCH_STATUS } from '../config/profileResearch.js'
 import { derivePipeline, AUDIT_PIPELINE, AUDIT_REVIEW } from './auditPipeline.js'
 import { reconcileOpportunity } from './opportunityReconciliation.js'
+import { isActiveWorkingLead } from './leadRouting.js'
 
 // Primary Saved-Leads sections (Milestone 15C11): the main operational separation is
 // Un-Audited / Audited / All Leads. "Needs Review" is no longer a primary section — it is
@@ -88,11 +89,21 @@ function passSearch(lead, q) {
   ].some(f => typeof f === 'string' && f.toLowerCase().includes(s))
 }
 
+// Section membership. The ALL section shows every lead (including routed ones). The AUDITED
+// section is the ACTIVE working list — a lead routed to a destination (Email Queue / Call List /
+// closed / DNC) leaves it while still appearing under All Leads (§2/§5).
+function passSection(lead, section) {
+  if (section === SECTIONS.ALL) return true
+  if (sectionOf(lead) !== section) return false
+  if (section === SECTIONS.AUDITED) return isActiveWorkingLead(lead)
+  return true
+}
+
 /** Apply the active section + filters + search. Returns { visible, counts }. */
 export function applyHubView(leads, { section = SECTIONS.ALL, filters = DEFAULT_HUB_FILTERS, query = '' } = {}) {
   const list = Array.isArray(leads) ? leads : []
   const visible = list.filter(l =>
-    (section === SECTIONS.ALL || sectionOf(l) === section) &&
+    passSection(l, section) &&
     passAuditFilter(l, filters.auditStatus) &&
     passReviewFilter(l, filters.reviewStatus) &&
     passWebsiteFilter(l, filters.websiteStatus) &&
@@ -104,7 +115,8 @@ export function applyHubView(leads, { section = SECTIONS.ALL, filters = DEFAULT_
   const counts = {
     all: list.length,
     un_audited: list.filter(l => sectionOf(l) === SECTIONS.UN_AUDITED).length,
-    audited: list.filter(l => sectionOf(l) === SECTIONS.AUDITED).length,
+    // The Audited tab count matches the active working list (routed leads excluded).
+    audited: list.filter(l => passSection(l, SECTIONS.AUDITED)).length,
     profile_researched: list.filter(l => sectionOf(l) === SECTIONS.PROFILE_RESEARCHED).length,
   }
   return { visible, counts }

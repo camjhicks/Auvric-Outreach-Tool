@@ -91,10 +91,6 @@ export default function SavedLeadsScreen({
   callList = [], onAddToCallList, onOpenCallList,
 }) {
   const callListedLeadIds = new Set((callList ?? []).map(e => e.savedLeadId).filter(Boolean))
-  function handleAddOneToCallList(lead) {
-    if (!onAddToCallList) return
-    onAddToCallList(lead)
-  }
   const restored = getSlice('savedLeads') ?? {}
   // Default to Un-Audited (§6): a freshly saved lead lands in the un-audited queue, the
   // user bulk-audits it, and every finished lead moves to Audited automatically.
@@ -244,19 +240,48 @@ export default function SavedLeadsScreen({
     const lead = leads.find(l => l.id === id)
     if (lead && lead.websiteUrl) onSendToBulk([lead])
   }
+  // Drop routed lead ids from the active selection so a routed lead never lingers selected
+  // in the (now shorter) Audited working list.
+  function deselect(ids) {
+    const drop = new Set(ids)
+    setSelected(prev => {
+      let changed = false
+      const next = new Set()
+      for (const id of prev) { if (drop.has(id)) changed = true; else next.add(id) }
+      return changed ? next : prev
+    })
+  }
   function handleAddOneToQueue(id) {
     if (!onAddToEmailQueue) return
     const lead = leads.find(l => l.id === id)
     if (!lead) return
     const wasAdded = onAddToEmailQueue(lead)
+    // The lead is now in the Email Queue (added or already there) → it leaves active Audited;
+    // clear it from the selection immediately.
+    deselect([id])
     setQueueMessage(wasAdded ? `${lead.businessName || 'Lead'} added to Email Queue.` : `${lead.businessName || 'Lead'} is already in the Email Queue.`)
   }
   function handleAddSelectedToQueue() {
     if (!onAddManyToEmailQueue) return
-    const chosen = [...selected].map(id => leads.find(l => l.id === id)).filter(Boolean)
+    const chosenIds = [...selected].filter(id => leads.some(l => l.id === id))
+    const chosen = chosenIds.map(id => leads.find(l => l.id === id)).filter(Boolean)
     if (chosen.length === 0) return
     const { addedCount, skippedCount } = onAddManyToEmailQueue(chosen)
+    deselect(chosenIds)
     setQueueMessage(`${addedCount} added to Email Queue${skippedCount ? `, ${skippedCount} already queued` : ''}.`)
+  }
+  function handleAddOneToCallList(lead) {
+    if (!onAddToCallList || !lead) return
+    const res = onAddToCallList(lead) ?? {}
+    if (res.reason === 'no_valid_phone') {
+      setQueueMessage(`${lead.businessName || 'Lead'} needs a valid phone number before it can go to the Call List.`)
+      return
+    }
+    // Added, or already present → the lead is in the Call List and leaves active Audited.
+    deselect([lead.id])
+    setQueueMessage(res.added === false
+      ? `${lead.businessName || 'Lead'} is already in the Call List.`
+      : `${lead.businessName || 'Lead'} added to Call List.`)
   }
 
   if (selectedLead) {

@@ -28,9 +28,12 @@ import {
   saveDiscoveryLead,
   getLeadsGenerated,
   incrementLeadsGenerated,
+  routeLead,
+  migrateLeadRoutingStatuses,
 } from './services/leadStorage'
-import { getQueue, addToQueue, addManyToQueue, reconcileWithLeads } from './services/emailQueueStorage'
-import { migrateFromEmailQueue } from './services/outreachHistoryStorage'
+import { getQueue, addToQueue, addManyToQueue, reconcileWithLeads, getQueueRecord } from './services/emailQueueStorage'
+import { migrateFromEmailQueue, deriveStatusForLead } from './services/outreachHistoryStorage'
+import { LEAD_ROUTING } from './utils/leadRouting'
 import { getCallList, addToCallList, reconcileCallListWithLeads } from './services/callListStorage'
 import { reconcileOpportunity } from './utils/opportunityReconciliation'
 import styles from './App.module.css'
@@ -89,6 +92,16 @@ export default function App() {
       overlay,
     })
     if (res.list) setCallList(res.list)
+    // Route the Saved Lead out of the active Audited list only once a Call List entry exists
+    // (added, or already present). A missing/invalid phone (res.reason==='no_valid_phone')
+    // never routes — the lead stays active. Never dials.
+    if (res.entry && (res.added || res.reason === 'already_in_list')) {
+      const { leads: updated, changed } = routeLead(lead.id, {
+        status: LEAD_ROUTING.CALL_LIST, routedTo: LEAD_ROUTING.CALL_LIST,
+        callListEntryId: res.entry.id ?? null,
+      })
+      if (changed) setLeads(updated)
+    }
     return res
   }
 
@@ -98,6 +111,21 @@ export default function App() {
   // invent a send that was not recorded. Reads a snapshot on mount; never sends anything.
   useEffect(() => {
     migrateFromEmailQueue(getQueue(), getLeads())
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One-time idempotent routing backfill (Milestone 15C11 follow-up §6): infer
+  // `leadRoutingStatus` for leads already in the Email Queue / Call List / marked DNC so they
+  // leave the active Audited list. Manual Call List entries only — website-error auto-routed
+  // entries are skipped so automatic routing is unchanged. Never creates destination records.
+  useEffect(() => {
+    const snapshot = getLeads()
+    const queuedLeadIds = new Set(getQueue().map(r => r.savedLeadId).filter(Boolean))
+    const callListLeadIds = new Set(
+      getCallList().filter(e => e.source !== 'website_error_audit').map(e => e.savedLeadId).filter(Boolean)
+    )
+    const dncLeadIds = new Set(snapshot.filter(l => deriveStatusForLead(l).doNotContact).map(l => l.id))
+    const { leads: migrated, changed } = migrateLeadRoutingStatuses({ queuedLeadIds, callListLeadIds, dncLeadIds })
+    if (changed) setLeads(migrated)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stats = {
@@ -191,16 +219,39 @@ export default function App() {
   }
 
   // Add a single Saved Lead to the Email Queue (deduped by savedLeadId). Returns whether
-  // it was newly added so callers can message "added" vs "already queued".
+  // it was newly added so callers can message "added" vs "already queued". Only AFTER the
+  // queue entry exists does the Saved Lead get routed out of the active Audited list; the
+  // central leads state is refreshed immediately (no reload). Never sends an email.
   function handleAddToEmailQueue(lead) {
-    const { queue, wasAdded } = addToQueue(lead)
+    const { queue, wasAdded, record } = addToQueue(lead)
     setEmailQueue(queue)
+    const entry = record ?? getQueueRecord(lead.id)
+    if (entry) {
+      const { leads: updated, changed } = routeLead(lead.id, {
+        status: LEAD_ROUTING.EMAIL_QUEUE, routedTo: LEAD_ROUTING.EMAIL_QUEUE,
+        emailQueueEntryId: entry.id ?? lead.id,
+      })
+      if (changed) setLeads(updated)
+    }
     return wasAdded
   }
-  // Bulk add Saved Leads to the Email Queue (only new records are created).
+  // Bulk add Saved Leads to the Email Queue (only new records are created). Every selected
+  // lead that ends up in the queue is routed out of the active Audited list.
   function handleAddManyToEmailQueue(selectedLeads) {
     const { queue, addedCount, skippedCount } = addManyToQueue(selectedLeads)
     setEmailQueue(queue)
+    let latest = null
+    for (const l of Array.isArray(selectedLeads) ? selectedLeads : []) {
+      if (!l?.id) continue
+      const entry = getQueueRecord(l.id)
+      if (!entry) continue
+      const { leads: updated, changed } = routeLead(l.id, {
+        status: LEAD_ROUTING.EMAIL_QUEUE, routedTo: LEAD_ROUTING.EMAIL_QUEUE,
+        emailQueueEntryId: entry.id ?? l.id,
+      })
+      if (changed) latest = updated
+    }
+    if (latest) setLeads(latest)
     return { addedCount, skippedCount }
   }
 

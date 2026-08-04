@@ -52,6 +52,20 @@ leads with any stored audit become Audited; leads with no audit stay Un-Audited.
 replaces the earlier behaviour where audited leads could remain stuck under "Needs Review" and
 where several sort options left the order unchanged.
 
+**Manual routing leaves the active Audited list.** A second authoritative field,
+`leadRoutingStatus ∈ {unassigned, email_queue, call_list, keep_for_later, meeting, closed,
+do_not_contact}` (`src/utils/leadRouting.js`), tracks whether an audited lead has been actioned.
+It is separate from `auditPipelineStatus` and never competes with it. When you click **Add to
+Email Queue** or **Add to Call List** from Audited, the destination entry is created first, then
+the Saved Lead is routed (`routedTo` / `routedAt` / `routingSource` + the destination entry id)
+and **immediately leaves the active Audited working list** — no refresh — while remaining under
+**All Leads** with a destination badge. The Audited tab shows only `unassigned` leads and its
+count updates at once. A do-not-contact lead is protected (routing never overrides it); a Call
+List add with no valid phone does not route and the lead stays active. A one-time idempotent
+migration infers routing for leads already in the Email Queue / Call List (manual entries only —
+website-error auto-routed entries are left untouched) or marked do-not-contact. No email is sent
+and no call is placed automatically.
+
 ## Outreach Memory — release (Milestone 15C8)
 
 The **Outreach Memory & Duplicate-Send Protection** system (Milestone 15C7) is validated

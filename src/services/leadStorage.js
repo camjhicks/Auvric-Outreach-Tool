@@ -12,6 +12,7 @@ import {
 import { pipelineFields, derivePipeline } from '../utils/auditPipeline.js'
 import { reconcileOpportunity } from '../utils/opportunityReconciliation.js'
 import { addToCallList, isInCallList } from './callListStorage.js'
+import { LEAD_ROUTING, ROUTING_SOURCE_MANUAL, defaultRoutingFields, isRoutingLocked } from '../utils/leadRouting.js'
 
 // Automatic website-error → Call List routing copy (Milestone 15C11, §10). A website that
 // errored/was unavailable during the audit means the business may still be active but
@@ -177,6 +178,10 @@ function migrateLead(lead) {
     // secondary review details. Legacy leads with any stored audit become "audited"; leads
     // with no audit stay "un_audited".
     ...pipelineFields(lead),
+    // Manual-routing status (Milestone 15C11 follow-up). Defaults to `unassigned` — a lead
+    // is only routed out of the active Audited queue by an explicit Email Queue / Call List
+    // action (or the one-time routing migration).
+    ...defaultRoutingFields(lead),
   }
 }
 
@@ -313,6 +318,72 @@ export function updateLead(id, updates) {
   const leads = getLeads().map(l => (l.id === id ? { ...l, ...updates } : l))
   setLeads(leads)
   return leads
+}
+
+/**
+ * Route a Saved Lead to a destination (Milestone 15C11 follow-up). Sets the ONE authoritative
+ * `leadRoutingStatus` (+ routedAt/routedTo/routingSource + the destination entry id) so the
+ * lead leaves the active Audited working list while staying in All Leads. Persists and returns
+ * the updated leads array so the caller can refresh central state without a reload.
+ *
+ * A do-not-contact lead is protected: its routing is never overridden. Returns
+ * { lead, leads, changed } — changed=false when the lead is missing or DNC-locked.
+ */
+export function routeLead(id, { status, routedTo = null, routingSource = ROUTING_SOURCE_MANUAL, emailQueueEntryId, callListEntryId } = {}) {
+  const now = new Date().toISOString()
+  let updated = null
+  let locked = false
+  const leads = getLeads().map(l => {
+    if (l.id !== id) return l
+    if (isRoutingLocked(l)) { locked = true; return l } // DNC protection — never overridden
+    updated = {
+      ...l,
+      leadRoutingStatus: status,
+      routedTo: routedTo ?? status,
+      routedAt: now,
+      routingSource,
+      updatedAt: now,
+      ...(emailQueueEntryId !== undefined ? { emailQueueEntryId } : {}),
+      ...(callListEntryId !== undefined ? { callListEntryId } : {}),
+    }
+    return updated
+  })
+  if (updated) { setLeads(leads); return { lead: updated, leads, changed: true } }
+  return { lead: null, leads, changed: false, locked }
+}
+
+/**
+ * One-time idempotent migration (Milestone 15C11 follow-up §6): infer `leadRoutingStatus` for
+ * existing leads from destination membership — a matching MANUAL Call List entry → call_list,
+ * a matching Email Queue entry → email_queue, a do-not-contact lead → do_not_contact. Never
+ * creates destination records, never touches audit results / history / DNC, and never overrides
+ * an already-set routing status. Website-error auto-routed Call List entries (source
+ * `website_error_audit`) are intentionally skipped so that automatic routing is unchanged.
+ * @param {object} ctx { queuedLeadIds:Set|string[], callListLeadIds:Set|string[], dncLeadIds:Set|string[] }
+ * @returns {{ leads, changed }}
+ */
+export function migrateLeadRoutingStatuses({ queuedLeadIds = [], callListLeadIds = [], dncLeadIds = [] } = {}) {
+  const queued = queuedLeadIds instanceof Set ? queuedLeadIds : new Set(queuedLeadIds)
+  const listed = callListLeadIds instanceof Set ? callListLeadIds : new Set(callListLeadIds)
+  const dnc = dncLeadIds instanceof Set ? dncLeadIds : new Set(dncLeadIds)
+  const now = new Date().toISOString()
+  let changed = 0
+  const leads = getLeads().map(l => {
+    // Idempotent: only infer for leads still unassigned (default). Never override.
+    if (l.leadRoutingStatus && l.leadRoutingStatus !== LEAD_ROUTING.UNASSIGNED) return l
+    let status = null
+    if (dnc.has(l.id)) status = LEAD_ROUTING.DO_NOT_CONTACT
+    else if (listed.has(l.id)) status = LEAD_ROUTING.CALL_LIST
+    else if (queued.has(l.id)) status = LEAD_ROUTING.EMAIL_QUEUE
+    if (!status) return l
+    changed++
+    return {
+      ...l, leadRoutingStatus: status, routedTo: status, routedAt: l.routedAt ?? now,
+      routingSource: 'routing_migration', updatedAt: now,
+    }
+  })
+  if (changed) setLeads(leads)
+  return { leads, changed }
 }
 
 // Persist an edited outreach draft onto a saved lead.
