@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { runBulkAudit } from '../services/bulkAuditApi'
-import { normalizeLeadUrl, saveBulkLeads } from '../services/leadStorage'
+import { normalizeLeadUrl, saveBulkLeads, syncBulkAuditResults, resultSyncStatus } from '../services/leadStorage'
 import { getSlice, setSlice } from '../services/sessionState'
 import { normalizeWebsiteUrl } from '../utils/normalizeWebsiteUrl'
 import { computeWebsiteOpportunity } from '../utils/websiteOpportunity'
@@ -62,6 +62,11 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
   // An audit that was running when the page was refreshed left running:true with no
   // results — surface it as interrupted with a clear Retry, and never pretend it finished.
   const [interrupted, setInterrupted] = useState(() => saved.running === true && !Array.isArray(saved.results))
+  // Bulk Audit persistence (Milestone 15C11).
+  const [syncSummary, setSyncSummary] = useState(saved.syncSummary ?? null)
+  const [isSaving, setIsSaving] = useState(false)
+  const runStartedAtRef = useRef(saved.runStartedAt ?? null)
+  const autoSyncPending = useRef(false)
 
   const { valid, warnings } = useMemo(() => parseInput(input), [input])
   const hasInput = input.trim().length > 0
@@ -76,8 +81,10 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
       selected: [...selected],
       running: isLoading,
       seededAt: saved.seededAt ?? Date.now(),
+      syncSummary,
+      runStartedAt: runStartedAtRef.current,
     })
-  }, [input, results, selected, isLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [input, results, selected, isLoading, syncSummary]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Set of normalized URLs already in the leads system — recomputed when leads changes
   const savedUrls = useMemo(
@@ -127,14 +134,67 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
     setSaveMessage(null)
     setExportError(null)
     setInterrupted(false)
+    setSyncSummary(null)
     setIsLoading(true)
+    runStartedAtRef.current = new Date().toISOString()
     try {
       const data = await runBulkAudit(valid)
+      autoSyncPending.current = true // persist to Saved Leads once results enrich (effect below)
       setResults(data)
     } catch (err) {
       setApiError(err.message)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // AUTOMATIC persistence (Milestone 15C11 fix): as soon as a run's results are available
+  // and enriched, synchronize every completed result to its Saved Lead, then refresh the
+  // app's central Saved Leads state so returning shows Audited immediately (no refresh).
+  // Idempotent — safe to run once per completion; the orchestrator skips already-synced
+  // results. Never adds to Email Queue / Call List and never sends anything.
+  useEffect(() => {
+    if (!autoSyncPending.current || !enrichedResults) return
+    autoSyncPending.current = false
+    const { summary, leads: updatedLeads } = syncBulkAuditResults(enrichedResults, discoveryByUrl, { runStartedAt: runStartedAtRef.current })
+    onLeadsChange(updatedLeads) // refresh central state — Saved Leads reflects it immediately
+    setSyncSummary(summary)
+  }, [enrichedResults]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live per-result sync status against the CURRENT leads (updates the instant a save
+  // finishes). normalizeLeadUrl(url) → { status, savedLeadId }.
+  const syncStatuses = useMemo(() => {
+    const m = new Map()
+    if (!enrichedResults) return m
+    for (const r of enrichedResults) {
+      m.set(normalizeLeadUrl(r.normalizedUrl), resultSyncStatus(r, discoveryByUrl, leads, { runStartedAt: runStartedAtRef.current }))
+    }
+    return m
+  }, [enrichedResults, leads]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Everything that CAN be saved (has a matching lead) is saved → the Save All fallback
+  // has nothing left to do.
+  const allSynced = useMemo(() => {
+    for (const { status } of syncStatuses.values()) {
+      if (status === 'not_saved') return false
+    }
+    return syncStatuses.size > 0
+  }, [syncStatuses])
+
+  // Manual fallback: Save All to Saved Leads. Idempotent; never removes results.
+  function handleSaveAll() {
+    if (!enrichedResults || isSaving) return
+    setIsSaving(true)
+    try {
+      const { summary, leads: updatedLeads } = syncBulkAuditResults(enrichedResults, discoveryByUrl, { runStartedAt: runStartedAtRef.current })
+      onLeadsChange(updatedLeads)
+      setSyncSummary(summary)
+      const saved = summary.audited + summary.partial + summary.blocked + summary.failed - summary.alreadySynced - summary.newerExists
+      setSaveMessage(summary.unmatched > 0
+        ? `Saved audit results to Saved Leads. ${summary.unmatched} result${summary.unmatched !== 1 ? 's' : ''} could not be matched.`
+        : 'All results are synchronized to Saved Leads.')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -250,16 +310,27 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
 
       {!isLoading && !apiError && results && results.length > 0 && (
         <>
+          {syncSummary && (
+            <div className={styles.syncSummary} role="status">
+              Bulk Audit complete: {syncSummary.audited} Audited, {syncSummary.partial} Partial, {syncSummary.blocked} Blocked, {syncSummary.failed} Failed
+              {syncSummary.unmatched > 0 ? `, ${syncSummary.unmatched} unable to match to a Saved Lead` : ''}.
+              {' '}Results are saved to Saved Leads automatically.
+            </div>
+          )}
           <div className={styles.resultsHeader}>
             <button
               className={styles.saveSelectedBtn}
-              disabled={selected.size === 0}
-              onClick={handleSaveSelected}
+              disabled={allSynced || isSaving}
+              onClick={handleSaveAll}
+              title="Reconcile every result with Saved Leads (safe to click repeatedly)"
             >
-              {selected.size > 0
-                ? `Save Selected (${selected.size})`
-                : 'Save Selected'}
+              {isSaving ? 'Saving…' : allSynced ? 'All Results Saved' : 'Save All to Saved Leads'}
             </button>
+            {selected.size > 0 && (
+              <button className={styles.saveSelectedBtn} disabled={isSaving} onClick={handleSaveSelected}>
+                Save Selected ({selected.size})
+              </button>
+            )}
             <button
               className={styles.exportBtn}
               onClick={handleExport}
@@ -285,7 +356,9 @@ export default function BulkAuditScreen({ onBack, leads = [], onLeadsChange }) {
                   salesReasoning={result.salesReasoning}
                   selected={selected.has(normUrl)}
                   saved={savedUrls.has(normUrl)}
+                  syncStatus={syncStatuses.get(normUrl)?.status ?? null}
                   onSelectionChange={handleToggle}
+                  onRetrySave={handleSaveAll}
                 />
               )
             })}

@@ -249,3 +249,14 @@
   line-height: 1.45;
   padding: 0.7rem 0.85rem;
 }
+
+/* Milestone 15C11 — bulk audit persistence summary */
+.syncSummary {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #2a7a4a;
+  border-radius: 8px;
+  background: rgba(40, 160, 90, 0.1);
+  color: var(--color-text, #e7ecf3);
+  font-size: 0.88rem;
+}

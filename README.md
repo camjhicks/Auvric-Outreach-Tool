@@ -1476,6 +1476,41 @@ automatically and Cameron returns to Saved Leads to decide — Email, Call, keep
   deterministic generator (an AI variant is a documented future option); meeting records
   are local (no calendar integration).
 
+## Bulk Audit Persistence & Save All (Milestone 15C11)
+
+Completed Bulk Audits now automatically synchronize to the corresponding Saved Leads, and
+a **Save All to Saved Leads** button provides a manual fallback.
+
+- **Root cause fixed.** Previously the Bulk Audit completion handler set results into
+  component state only — persistence happened solely through the manual "Save Selected"
+  button (which required selecting results first). So completed audits left Saved Leads as
+  *not audited*. There was no automatic synchronization.
+- **Automatic persistence.** As soon as a run's results are available and enriched, every
+  usable result is synced to its Saved Lead via the ONE centralized identity service
+  (`savedLeadId` → Place ID → domain/phone+name/name+address fallbacks — never a competing
+  matcher). Complete audits become `audited`; usable partials become `audit_partial`;
+  blocked/failed keep the correct `audit_blocked` / `audit_failed` / `audit_retry_needed`
+  status (never falsely "audited"). Website/Client Opportunity, qualification, website
+  status, verified problems, and evidence persist with the lead.
+- **Idempotent.** Re-running the completion handler or clicking Save All repeatedly never
+  creates duplicate leads, duplicates history, doubles the attempt count, or lets an older
+  result overwrite a newer stored audit (already-synced results are skipped).
+- **Immediate refresh.** After persistence the app's central Saved Leads state is updated,
+  so returning to Saved Leads shows Audited immediately — no browser refresh — with filters
+  and counts updated and the audit result attached to the lead.
+- **Completion summary.** The results screen shows an accurate transaction summary, e.g.
+  “Bulk Audit complete: 18 Audited, 2 Partial, 1 Blocked, 1 Failed” plus how many could not
+  be matched to a Saved Lead.
+- **Save All to Saved Leads.** A prominent fallback button reconciles every displayed result
+  with Saved Leads; it is disabled while saving, shows progress, reports the outcome, and
+  reads **All Results Saved** once everything is synchronized. It never removes results and
+  never adds anything to the Email Queue or Call List.
+- **Per-result status.** Each result card shows its sync status — Saved to Lead, Not yet
+  saved, No matching Saved Lead, or Newer result already exists — with a Retry Save action
+  for the unsaved ones. An audit with no matching Saved Lead is clearly labelled “This audit
+  is not connected to a Saved Lead” and is never turned into a duplicate automatically.
+- **No scoring changes, no automatic emails or calls** were introduced.
+
 ## Local setup
 
 ```bash

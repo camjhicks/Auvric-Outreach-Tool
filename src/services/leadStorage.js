@@ -7,13 +7,14 @@ import { withProfileResearchDefaults } from '../utils/profileResearch.js'
 import {
   defaultAuditWorkflowFields, completedFields as auditCompletedFields,
   queuedFields as auditQueuedFields, auditingFields as auditAuditingFields,
+  workflowFromAuditStatus, isCompletedWorkflow,
 } from '../utils/auditWorkflow.js'
 
 const LEADS_KEY = 'auvric_leads'
 const GENERATED_KEY = 'auvric_leads_generated'
 
 // Derive a normalized audit status from a completed audit result (Milestone 15C1).
-function deriveAuditStatus(result) {
+export function deriveAuditStatus(result) {
   if (!result) return 'not_audited'
   const s = result.siteHealth?.siteAvailabilityStatus ?? null
   if (result.accessError || s === 'blocked') return 'audit_blocked'
@@ -564,6 +565,115 @@ export function saveBulkLeads(results, discoveryByUrl = null) {
   // skippedCount retained (always 0 now — duplicates update instead of being skipped).
   return { savedCount, updatedCount, skippedCount: 0, leads: current }
 }
+
+// Resolve the Saved Lead a bulk-audit result belongs to, using the SAME centralized
+// identity rules saveBulkLeads uses: the carried Saved-Lead id first, then Place ID /
+// domain / phone+name / name+address via findMatch. Never a competing matcher.
+export function matchLeadForResult(result, discoveryByUrl, leads) {
+  const list = Array.isArray(leads) ? leads : getLeads()
+  const matchKey = normalizeLeadUrl(result?.requestedUrl ?? result?.normalizedUrl)
+  const meta = discoveryByUrl?.get?.(matchKey) ?? null
+  const metaId = typeof meta?.id === 'string' ? meta.id : null
+  if (metaId) { const byId = list.find(l => l.id === metaId); if (byId) return byId }
+  const probe = {
+    websiteUrl: result?.normalizedUrl,
+    businessName: (typeof result?.businessName === 'string' && result.businessName.trim()) || meta?.businessName || null,
+    googlePlaceId: meta?.googlePlaceId ?? null,
+    phone: meta?.phone ?? null,
+    address: meta?.address ?? null,
+  }
+  return findMatch(probe, list) ?? null
+}
+
+// True when the lead already reflects THIS exact audit result (idempotency guard so a
+// repeated completion callback / Save All click never re-increments or duplicates).
+function alreadySynced(lead, result) {
+  if (!lead) return false
+  const status = deriveAuditStatus(result)
+  const target = workflowFromAuditStatus(status, result?.siteHealth?.siteAvailabilityStatus ?? null)
+  return lead.auditWorkflowStatus === target &&
+    lead.latestAuditStatus === status &&
+    (lead.siteAvailabilityStatus ?? null) === (result?.siteHealth?.siteAvailabilityStatus ?? null) &&
+    Number.isInteger(lead.auditResultVersion) && lead.auditResultVersion >= 1
+}
+
+/**
+ * Automatically synchronize completed Bulk Audit results to their Saved Leads
+ * (Milestone 15C11). Idempotent: results already synced are skipped (no duplicate leads,
+ * no duplicated history, no doubled attempt count, no older result overwriting a newer
+ * one). Unmatched results never create a duplicate lead. Returns an accurate summary +
+ * a per-result sync status. Never touches Email Queue / Call List / scoring.
+ *
+ * @param {object[]} results        enriched bulk-audit results (with opportunity/client/sales)
+ * @param {Map} discoveryByUrl      normalizeLeadUrl(url) → discovery/saved-lead metadata (carries id)
+ * @param {object} [opts]           { runStartedAt } ISO string of when the run began
+ * @returns {{ summary, perResult, leads, savedCount }}
+ */
+export function syncBulkAuditResults(results, discoveryByUrl = null, { runStartedAt = null } = {}) {
+  const list = Array.isArray(results) ? results : []
+  const before = getLeads()
+  const perResult = []
+  const toSave = []
+
+  for (const result of list) {
+    const url = result?.normalizedUrl ?? result?.requestedUrl ?? null
+    const lead = matchLeadForResult(result, discoveryByUrl, before)
+    const status = deriveAuditStatus(result)
+    const workflow = workflowFromAuditStatus(status, result?.siteHealth?.siteAvailabilityStatus ?? null)
+    const base = { normalizedUrl: url, businessName: result?.businessName ?? lead?.businessName ?? null, auditWorkflow: workflow, savedLeadId: lead?.id ?? null }
+
+    if (!lead) { perResult.push({ ...base, syncStatus: 'no_match' }); continue }
+    if (alreadySynced(lead, result)) { perResult.push({ ...base, syncStatus: 'already_saved' }); continue }
+    // Never let an older result overwrite a genuinely newer stored audit.
+    if (runStartedAt && lead.auditCompletedAt && new Date(lead.auditCompletedAt) > new Date(runStartedAt) &&
+        lead.latestAuditStatus && lead.latestAuditStatus !== status) {
+      perResult.push({ ...base, syncStatus: 'newer_exists' }); continue
+    }
+    toSave.push(result)
+    perResult.push({ ...base, syncStatus: 'saved' })
+  }
+
+  let leads = before
+  let savedCount = 0
+  if (toSave.length > 0) {
+    const res = saveBulkLeads(toSave, discoveryByUrl)
+    leads = res.leads
+    savedCount = res.savedCount + res.updatedCount
+  }
+
+  const summary = { audited: 0, partial: 0, blocked: 0, failed: 0, unmatched: 0, alreadySynced: 0, newerExists: 0, total: list.length }
+  for (const r of perResult) {
+    if (r.syncStatus === 'no_match') summary.unmatched++
+    else if (r.syncStatus === 'already_saved') summary.alreadySynced++
+    else if (r.syncStatus === 'newer_exists') summary.newerExists++
+    // Count the audit classification regardless of whether it was saved this pass.
+    if (r.auditWorkflow === 'audited') summary.audited++
+    else if (r.auditWorkflow === 'audit_partial') summary.partial++
+    else if (r.auditWorkflow === 'audit_blocked') summary.blocked++
+    else if (r.auditWorkflow === 'audit_failed' || r.auditWorkflow === 'audit_retry_needed') summary.failed++
+  }
+  return { summary, perResult, leads, savedCount }
+}
+
+// Live per-result sync status for the Bulk Audit UI (§6), computed against the CURRENT
+// leads (so it updates the moment persistence finishes). Pure read — never writes.
+//   'saved'        — matched Saved Lead already reflects this exact result
+//   'not_saved'    — matched a Saved Lead but the result is not yet persisted
+//   'no_match'     — no Saved Lead matches (a duplicate is never created automatically)
+//   'newer_exists' — the Saved Lead has a newer audit; this older result won't overwrite it
+export function resultSyncStatus(result, discoveryByUrl, leads, { runStartedAt = null } = {}) {
+  const list = Array.isArray(leads) ? leads : getLeads()
+  const lead = matchLeadForResult(result, discoveryByUrl, list)
+  if (!lead) return { status: 'no_match', savedLeadId: null }
+  if (alreadySynced(lead, result)) return { status: 'saved', savedLeadId: lead.id }
+  if (runStartedAt && lead.auditCompletedAt && new Date(lead.auditCompletedAt) > new Date(runStartedAt) &&
+      lead.latestAuditStatus && lead.latestAuditStatus !== deriveAuditStatus(result)) {
+    return { status: 'newer_exists', savedLeadId: lead.id }
+  }
+  return { status: 'not_saved', savedLeadId: lead.id }
+}
+
+export { isCompletedWorkflow }
 
 export function getLeadsGenerated() {
   return parseInt(localStorage.getItem(GENERATED_KEY) ?? '0', 10)

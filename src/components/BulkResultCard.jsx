@@ -15,7 +15,15 @@ const PRIORITY_COLOR = {
   'Low Priority':    '#f87171',
 }
 
-export default function BulkResultCard({ result, opportunity, clientOpportunity, salesReasoning, selected = false, saved = false, onSelectionChange }) {
+// Per-result synchronization badge (Milestone 15C11, §6).
+const SYNC_LABEL = {
+  saved: 'Saved to Lead',
+  not_saved: 'Not yet saved',
+  no_match: 'No matching Saved Lead',
+  newer_exists: 'Newer result already exists',
+}
+
+export default function BulkResultCard({ result, opportunity, clientOpportunity, salesReasoning, selected = false, saved = false, syncStatus = null, onRetrySave, onSelectionChange }) {
   const {
     normalizedUrl,
     accessError,
@@ -52,6 +60,15 @@ export default function BulkResultCard({ result, opportunity, clientOpportunity,
           : <span className={styles.badgeSuccess}>Success</span>
         }
       </div>
+      {syncStatus && (
+        <div className={`${styles.syncRow} ${styles['sync_' + syncStatus] ?? ''}`}>
+          <span className={styles.syncBadge}>{SYNC_LABEL[syncStatus] ?? syncStatus}</span>
+          {(syncStatus === 'not_saved') && onRetrySave && (
+            <button type="button" className={styles.retryBtn} onClick={onRetrySave}>Retry Save</button>
+          )}
+          {syncStatus === 'no_match' && <span className={styles.syncNote}>This audit is not connected to a Saved Lead.</span>}
+        </div>
+      )}
 
       <div className={styles.scoreRow}>
         <span className={styles.score} style={{ color: priorityColor }}>{leadScore}</span>
