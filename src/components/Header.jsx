@@ -1,7 +1,7 @@
 import styles from './Header.module.css'
 
-export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQueue, onViewCallList, onViewProfileResearch, onViewBulk, onViewDiscovery, onResetSession }) {
-  const hasNav = onViewLeads || onViewQueue || onViewEmailQueue || onViewCallList || onViewProfileResearch || onViewBulk || onViewDiscovery
+export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQueue, onViewCallList, onViewProfileResearch, onViewBulk, onViewDiscovery, onViewLeadLists, onResetSession }) {
+  const hasNav = onViewLeads || onViewQueue || onViewEmailQueue || onViewCallList || onViewProfileResearch || onViewBulk || onViewDiscovery || onViewLeadLists
   return (
     <header className={styles.header}>
       {onHome ? (
@@ -38,6 +38,9 @@ export default function Header({ onHome, onViewLeads, onViewQueue, onViewEmailQu
           )}
           {onViewDiscovery && (
             <button className={styles.navBtn} onClick={onViewDiscovery}>Lead Discovery</button>
+          )}
+          {onViewLeadLists && (
+            <button className={styles.navBtn} onClick={onViewLeadLists}>Lead Lists</button>
           )}
           {onResetSession && (
             <button

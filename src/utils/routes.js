@@ -14,6 +14,7 @@ export const ROUTES = Object.freeze({
   EMAIL_QUEUE: '/email-queue',
   PROFILE_RESEARCH: '/profile-research',
   CALL_LIST: '/call-list',
+  LEAD_LISTS: '/lead-lists',
 })
 
 // The internal "screen" keys App already uses.
@@ -26,6 +27,7 @@ export const SCREENS = Object.freeze({
   EMAIL_QUEUE: 'email_queue',
   PROFILE_RESEARCH: 'profile_research',
   CALL_LIST: 'call_list',
+  LEAD_LISTS: 'lead_lists',
 })
 
 /**
@@ -42,6 +44,7 @@ export function parseRoute(pathname) {
   if (path === ROUTES.EMAIL_QUEUE) return { screen: SCREENS.EMAIL_QUEUE, leadId: null, invalid: false }
   if (path === ROUTES.PROFILE_RESEARCH) return { screen: SCREENS.PROFILE_RESEARCH, leadId: null, invalid: false }
   if (path === ROUTES.CALL_LIST) return { screen: SCREENS.CALL_LIST, leadId: null, invalid: false }
+  if (path === ROUTES.LEAD_LISTS) return { screen: SCREENS.LEAD_LISTS, leadId: null, invalid: false }
   if (path === ROUTES.LEADS) return { screen: SCREENS.LEADS, leadId: null, invalid: false }
   const m = path.match(/^\/leads\/([A-Za-z0-9._-]{1,128})$/)
   if (m) return { screen: SCREENS.LEADS, leadId: decodeURIComponent(m[1]), invalid: false }
@@ -57,6 +60,7 @@ export function routeForScreen(screen, leadId = null) {
     case SCREENS.EMAIL_QUEUE: return ROUTES.EMAIL_QUEUE
     case SCREENS.PROFILE_RESEARCH: return ROUTES.PROFILE_RESEARCH
     case SCREENS.CALL_LIST: return ROUTES.CALL_LIST
+    case SCREENS.LEAD_LISTS: return ROUTES.LEAD_LISTS
     case SCREENS.LEADS: return leadId ? `${ROUTES.LEADS}/${encodeURIComponent(leadId)}` : ROUTES.LEADS
     case SCREENS.AUDIT:
     default: return ROUTES.HOME

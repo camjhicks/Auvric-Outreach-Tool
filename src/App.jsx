@@ -10,6 +10,7 @@ import LeadDiscoveryScreen from './components/LeadDiscoveryScreen'
 import EmailQueueScreen from './components/EmailQueueScreen'
 import CallListScreen from './components/CallListScreen'
 import ProfileResearchScreen from './components/ProfileResearchScreen'
+import LeadListsScreen from './components/LeadListsScreen'
 import ConfirmModal from './components/ConfirmModal'
 import { runAudit } from './services/auditApi'
 import { generateOutreach } from './services/outreachApi'
@@ -310,6 +311,7 @@ export default function App() {
   const goCallList = () => navigateScreen(SCREENS.CALL_LIST)
   const goProfileResearch = () => navigateScreen(SCREENS.PROFILE_RESEARCH)
   const goDiscovery = () => navigateScreen(SCREENS.DISCOVERY)
+  const goLeadLists = () => navigateScreen(SCREENS.LEAD_LISTS)
   // Navigating to Bulk preserves any existing Bulk working state (it is restored
   // by BulkAuditScreen from the session slice); it no longer wipes it.
   const goBulk = () => navigateScreen(SCREENS.BULK)
@@ -355,6 +357,7 @@ export default function App() {
     onViewProfileResearch: goProfileResearch,
     onViewBulk: goBulk,
     onViewDiscovery: goDiscovery,
+    onViewLeadLists: goLeadLists,
     onResetSession: () => setShowReset(true),
   }
 
@@ -477,6 +480,16 @@ export default function App() {
             goLeads()
           }}
         />
+        {resetModal}
+      </div>
+    )
+  }
+
+  if (screen === SCREENS.LEAD_LISTS) {
+    return (
+      <div className={styles.app}>
+        <Header {...headerProps} onViewLeadLists={undefined} />
+        <LeadListsScreen onBack={goHome} />
         {resetModal}
       </div>
     )
