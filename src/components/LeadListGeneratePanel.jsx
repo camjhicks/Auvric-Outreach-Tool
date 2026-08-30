@@ -4,8 +4,8 @@ import { TOTAL_ASSIGNMENT_TARGET } from '../config/leadListQualification'
 import styles from './LeadListGeneratePanel.module.css'
 
 const STAGE_LABELS = [
-  'Collecting candidates', 'Cleaning records', 'Checking websites', 'Checking recent activity',
-  'Deduplicating', 'Scoring', 'Qualifying', 'Saving',
+  'Collecting candidates', 'Cleaning records', 'Deduplicating', 'Checking hard-reject rules',
+  'Checking websites', 'Checking recent activity', 'Scoring', 'Qualifying', 'Saving',
 ]
 
 export default function LeadListGeneratePanel({ onStart, onStop, isRunning, progress, lastSummary }) {
@@ -114,8 +114,9 @@ export default function LeadListGeneratePanel({ onStart, onStop, isRunning, prog
           <ul className={styles.progressCounts}>
             <li>Candidates found: {progress?.candidatesFound ?? 0}</li>
             <li>Duplicates removed: {progress?.duplicatesRemoved ?? 0}</li>
-            <li>Rejected: {progress?.rejected ?? 0}</li>
+            <li>Hard rejected: {progress?.hardRejected ?? 0}</li>
             <li>Qualified: {progress?.qualified ?? 0}</li>
+            <li>Disregarded: {progress?.disregarded ?? 0}</li>
           </ul>
           {progress?.warning && <p className={styles.warn}>{progress.warning}</p>}
         </div>
@@ -125,10 +126,14 @@ export default function LeadListGeneratePanel({ onStart, onStop, isRunning, prog
         <div className={styles.summary} role="status">
           <p className={styles.summaryLine}>
             Run complete — {lastSummary.qualified} qualified out of {lastSummary.candidatesFound} candidates found
-            ({lastSummary.duplicatesRemoved} duplicates, {lastSummary.rejected} rejected).
+            ({lastSummary.duplicatesRemoved} duplicates, {lastSummary.hardRejected} hard rejected, {lastSummary.disregarded} disregarded by score/guardrail).
           </p>
           <p className={styles.summarySub}>
-            {lastSummary.savedCount} new leads saved to Master Leads. Stopped: {lastSummary.stoppedReason?.replace(/_/g, ' ')}.
+            Tiers — S: {lastSummary.tierBreakdown?.S ?? 0}, A+: {lastSummary.tierBreakdown?.['A+'] ?? 0},
+            A: {lastSummary.tierBreakdown?.A ?? 0}, B (reserve, not auto-assigned): {lastSummary.tierBreakdown?.B ?? 0}.
+          </p>
+          <p className={styles.summarySub}>
+            {lastSummary.savedCount} new records saved to Master Leads. Stopped: {lastSummary.stoppedReason?.replace(/_/g, ' ')}.
           </p>
           {lastSummary.qualified < lastSummary.targetQualifiedCount && (
             <p className={styles.summarySub}>

@@ -6,23 +6,28 @@
 // No new server code. Every network call is injectable so this is fully unit-testable
 // with mocks (no real network, no real timers) and never spends API quota in tests.
 //
-// Gathers a LARGER candidate pool than the target and filters it — qualification
-// standards are never lowered just to fill a quota (§ "if only 1,087 qualify, report
-// that"). Cancellable via a mutable control ref; persists qualified leads + the
-// rejected-dedup registry INCREMENTALLY so a stopped run never loses progress.
+// PIPELINE ORDER (§28 — cost/performance): collect → clean → DEDUP → HARD REJECT
+// (cheap, Places-only evidence) → website analysis → OPTIONAL review enrichment →
+// score (incl. qualification guardrails) → persist (QUALIFIED + DISREGARDED, unified)
+// → summarize. Hard rejects run BEFORE the paid/expensive website audit so a
+// permanently-closed business, a chain, or a no-phone listing never consumes that
+// budget. Gathers a LARGER candidate pool than the target and filters it —
+// qualification standards are never lowered to fill a quota. Cancellable via a
+// mutable control ref; persists incrementally at the end of the run so a stopped run
+// still keeps whatever was fully scored.
 
 import { discoverLeads, toExcludeDescriptors } from '../services/leadDiscoveryApi.js'
 import { runBulkAudit } from '../services/bulkAuditApi.js'
 import { fetchPlaceDetails } from '../services/profileResearchApi.js'
 import {
-  getKnownIdentityDescriptors, addQualifiedLeads, addRejectedCandidates, recordRun,
+  getKnownIdentityDescriptors, addProcessedCandidates, getDisregardBreakdown, recordRun,
 } from '../services/leadListStorage.js'
-import { scoreCandidate } from './leadListScoring.js'
+import { scoreCandidate, evaluateHardRejects } from './leadListScoring.js'
 import { classifyFreeWebsiteStatus, classifyVerifiedWebsiteStatus } from './leadListWebsiteStatus.js'
 import { computeWebsiteOpportunity } from './websiteOpportunity.js'
 import { leadsMatch, normalizePhoneDigits } from './leadIdentity.js'
 import {
-  GENERATION_DEFAULTS, TOTAL_ASSIGNMENT_TARGET,
+  GENERATION_DEFAULTS, TOTAL_ASSIGNMENT_TARGET, QUALIFICATION_STATUS, LEAD_TIERS,
 } from '../config/leadListQualification.js'
 
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -76,7 +81,8 @@ export async function runLeadListGeneration(opts) {
   for (const industry of industries) for (const location of locations) combos.push({ industry, location })
 
   const counters = {
-    candidatesFound: 0, duplicatesRemoved: 0, rejected: 0, qualified: 0, assigned: 0,
+    candidatesFound: 0, duplicatesRemoved: 0, previouslyKnown: 0, hardRejected: 0,
+    scored: 0, qualified: 0, disregarded: 0, assigned: 0,
     discoveryRequests: 0, websiteVerifications: 0, reviewEnrichments: 0,
   }
   let stoppedReason = null
@@ -138,13 +144,48 @@ export async function runLeadListGeneration(opts) {
   reportProgress(onProgress, { stage: 'Cleaning records', ...counters })
   let cleaned = attachLocationEstimates(pool)
 
-  // ---- Stage 3: Checking websites (verified via the EXISTING audit crawler) -------
-  reportProgress(onProgress, { stage: 'Checking websites', ...counters })
+  // ---- Stage 3: Deduplicating against persisted history (BEFORE any further work —
+  // §28: a business already processed in a prior run is never re-verified/re-scored) --
+  reportProgress(onProgress, { stage: 'Deduplicating', ...counters })
+  const known = getKnownIdentityDescriptors()
+  cleaned = cleaned.filter(c => {
+    if (known.some(k => leadsMatch(c, k))) { counters.duplicatesRemoved++; counters.previouslyKnown++; return false }
+    return true
+  })
+
+  // ---- Stage 4: Hard-reject checks (cheap, Places-only — BEFORE any website audit
+  // spend, §28) — permanently/temporarily closed, no/invalid phone, chain/franchise,
+  // too many locations. A high score can never override these later. -----------------
+  reportProgress(onProgress, { stage: 'Checking hard-reject rules', ...counters })
+  const hardRejectedRecords = []
+  const survivors = []
   for (const c of cleaned) {
+    const hard = evaluateHardRejects(c)
+    if (hard.rejected) {
+      hardRejectedRecords.push({
+        ...c,
+        qualificationStatus: QUALIFICATION_STATUS.DISREGARDED,
+        disregardReasonCodes: hard.codes,
+        disregardExplanation: hard.explanation,
+        totalScore: null, tier: null, scoreBreakdown: [],
+        buyingPower: 'Unknown', estimatedCustomerValue: 'Unknown',
+        whyQualified: null, recommendedCallAngle: null, chainRiskLevel: hard.chainRiskLevel,
+      })
+      counters.hardRejected++
+    } else {
+      survivors.push(c)
+    }
+  }
+  reportProgress(onProgress, { stage: 'Checking hard-reject rules', ...counters })
+
+  // ---- Stage 5: Checking websites (verified via the EXISTING audit crawler) — only
+  // for hard-reject survivors, so obvious rejects never spend this budget. -----------
+  reportProgress(onProgress, { stage: 'Checking websites', ...counters })
+  for (const c of survivors) {
     const free = classifyFreeWebsiteStatus(c)
     if (free) { c.websiteStatus = free; c.websiteStatusVerified = true }
   }
-  const needsVerification = cleaned.filter(c => !c.websiteStatus)
+  const needsVerification = survivors.filter(c => !c.websiteStatus)
   const verifyBudget = Math.min(needsVerification.length, cfg.maxWebsiteVerificationsPerRun)
   for (let i = 0; i < verifyBudget && !control.cancelled; i += cfg.websiteVerificationBatchSize) {
     const batch = needsVerification.slice(i, i + cfg.websiteVerificationBatchSize)
@@ -160,9 +201,11 @@ export async function runLeadListGeneration(opts) {
       const r = results.find(x => x.requestedUrl === c.websiteUrl || x.normalizedUrl === c.websiteUrl)
       if (!r) continue // stays unverified — conservative default applied below
       const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: industryById.get(c.industryId)?.serviceFamily ?? null })
-      const { status } = classifyVerifiedWebsiteStatus(r, opportunity)
+      const { status, opportunityScore, weaknessEvidence } = classifyVerifiedWebsiteStatus(r, opportunity)
       c.websiteStatus = status
       c.websiteStatusVerified = true
+      c.websiteOpportunityScore = opportunityScore
+      c.websiteWeaknessEvidence = weaknessEvidence
       counters.websiteVerifications++
     }
     reportProgress(onProgress, { stage: 'Checking websites', ...counters })
@@ -170,15 +213,15 @@ export async function runLeadListGeneration(opts) {
   }
   // Anything left unverified (real domain, over the verification cap) gets the
   // conservative default so it is never claimed to be broken or decent without evidence.
-  for (const c of cleaned) {
+  for (const c of survivors) {
     if (!c.websiteStatus) { c.websiteStatus = 'WEAK/OUTDATED WEBSITE'; c.websiteStatusVerified = false }
     if (!c.recentReviewActivity) c.recentReviewActivity = 'Unknown'
   }
 
-  // ---- Stage 3b: OPTIONAL recent-review-activity enrichment (opt-in, bounded) -----
+  // ---- Stage 6: OPTIONAL recent-review-activity enrichment (opt-in, bounded) ------
   if (enrichReviews) {
     reportProgress(onProgress, { stage: 'Checking recent activity', ...counters })
-    const withReviews = cleaned.filter(c => (c.reviewCount ?? 0) > 0).slice(0, cfg.maxReviewEnrichmentsPerRun)
+    const withReviews = survivors.filter(c => (c.reviewCount ?? 0) > 0).slice(0, cfg.maxReviewEnrichmentsPerRun)
     for (const c of withReviews) {
       if (control.cancelled) break
       let details
@@ -194,42 +237,51 @@ export async function runLeadListGeneration(opts) {
     reportProgress(onProgress, { stage: 'Checking recent activity', ...counters })
   }
 
-  // ---- Stage 4: Deduplicating (final pass against persisted history) --------------
-  reportProgress(onProgress, { stage: 'Deduplicating', ...counters })
-  const known = getKnownIdentityDescriptors()
-  cleaned = cleaned.filter(c => {
-    if (known.some(k => leadsMatch(c, k))) { counters.duplicatesRemoved++; return false }
-    return true
-  })
-
-  // ---- Stage 5: Scoring + Qualifying (incremental persistence) --------------------
+  // ---- Stage 7: Scoring + qualification guardrails (survivors only) --------------
   reportProgress(onProgress, { stage: 'Scoring', ...counters })
-  const qualified = []
-  const rejected = []
-  for (const c of cleaned) {
+  const scoredRecords = []
+  for (const c of survivors) {
     const result = scoreCandidate(c)
-    if (result.rejected) {
-      rejected.push({ ...c, rejectReason: result.rejectReason })
-      counters.rejected++
-    } else {
-      qualified.push({ ...c, ...result })
-      counters.qualified++
-    }
+    counters.scored++
+    if (result.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED) counters.qualified++
+    else counters.disregarded++
+    scoredRecords.push({ ...c, ...result })
   }
   reportProgress(onProgress, { stage: 'Qualifying', ...counters })
-  try { addRejectedCandidates(rejected) } catch { /* dedup history is best-effort */ }
+
+  // ---- Stage 8: Saving — QUALIFIED and DISREGARDED are persisted together (§1) ----
+  const allProcessed = [...hardRejectedRecords, ...scoredRecords]
   let savedCount = 0
+  let skippedCount = 0
   try {
-    const { addedCount } = addQualifiedLeads(qualified.map(q => ({ ...q, generationRunId: null })))
-    savedCount = addedCount
+    const res = addProcessedCandidates(allProcessed)
+    savedCount = res.addedCount
+    skippedCount = res.skippedCount
   } catch { /* leads are still returned in-memory below even if persistence failed */ }
   reportProgress(onProgress, { stage: 'Saving', savedCount, ...counters })
 
+  // Tier breakdown among newly-qualified leads this run (§25).
+  const qualifiedThisRun = scoredRecords.filter(r => r.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED)
+  const tierBreakdown = { [LEAD_TIERS.S]: 0, [LEAD_TIERS.A_PLUS]: 0, [LEAD_TIERS.A]: 0, [LEAD_TIERS.B]: 0 }
+  for (const r of qualifiedThisRun) tierBreakdown[r.tier] = (tierBreakdown[r.tier] ?? 0) + 1
+
+  // Disregard-reason breakdown across ALL disregarded records produced this run (hard
+  // rejects + guardrail disregards), for the "why is the scraper finding the wrong
+  // kinds of businesses" summary (§25).
+  const disregardBreakdown = getDisregardBreakdown([
+    ...hardRejectedRecords, ...scoredRecords.filter(r => r.qualificationStatus === QUALIFICATION_STATUS.DISREGARDED),
+  ])
+
   const summary = {
     industries: industries.map(i => i.id), locations: locations.slice(),
-    targetQualifiedCount, ...counters, savedCount, stoppedReason,
+    targetQualifiedCount, ...counters, savedCount, skippedCount, stoppedReason,
     enrichReviews: Boolean(enrichReviews),
+    tierBreakdown, disregardBreakdown,
+    // Filled in by the caller after auto-assignment runs (a separate step — see
+    // LeadListsScreen.runAutoAssignment) via updateRunSummary(runId, {...}).
+    assignedJaco: 0, assignedMarc: 0, assignedCameron: 0, unassignedQualified: 0,
   }
-  try { recordRun(summary) } catch { /* history is best-effort, never blocks the result */ }
-  return { summary }
+  let runId = null
+  try { runId = recordRun(summary).id } catch { /* history is best-effort, never blocks the result */ }
+  return { summary, runId }
 }

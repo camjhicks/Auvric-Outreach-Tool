@@ -8,7 +8,8 @@
 
 import {
   WEBSITE_STATUS, SOCIAL_ONLY_DOMAINS, WEBSITE_ERROR_AVAILABILITY,
-  DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE,
+  DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE, WEAK_WEBSITE_NEED_MIN, WEAK_WEBSITE_NEED_MAX,
+  DECENT_WEBSITE_NEED_MIN, DECENT_WEBSITE_NEED_MAX,
 } from '../config/leadListQualification.js'
 
 function hostOf(url) {
@@ -44,18 +45,47 @@ export function classifyFreeWebsiteStatus(candidate) {
  * (the exact shape /api/bulk-audit returns: { siteHealth, evidence, accessError }) plus
  * the existing Website Opportunity score. Pure — never fabricates a status when the
  * audit itself could not be run (caller should keep it unverified in that case).
- * @returns {{ status: string, opportunityScore: number|null }}
+ * Carries the opportunity score AND its biggest detected weakness forward so scoring
+ * can grade WEAK/OUTDATED severity from real evidence instead of a flat number, and
+ * so disregard/qualification explanations can cite the actual problem found.
+ * @returns {{ status: string, opportunityScore: number|null, weaknessEvidence: string|null }}
  */
 export function classifyVerifiedWebsiteStatus(auditResult, opportunity) {
   const avail = auditResult?.siteHealth?.siteAvailabilityStatus ?? null
   if (auditResult?.accessError || WEBSITE_ERROR_AVAILABILITY.includes(avail)) {
-    return { status: WEBSITE_STATUS.BROKEN, opportunityScore: null }
+    return { status: WEBSITE_STATUS.BROKEN, opportunityScore: null, weaknessEvidence: null }
   }
   const score = typeof opportunity?.websiteOpportunityScore === 'number' ? opportunity.websiteOpportunityScore : null
+  const weaknessEvidence = typeof opportunity?.biggestWebsiteWeakness === 'string' ? opportunity.biggestWebsiteWeakness : null
   // Blocked or otherwise unscored real sites are treated conservatively as weak
   // evidence rather than invented as decent.
   if (score == null || score < DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE) {
-    return { status: WEBSITE_STATUS.WEAK, opportunityScore: score }
+    return { status: WEBSITE_STATUS.WEAK, opportunityScore: score, weaknessEvidence }
   }
-  return { status: WEBSITE_STATUS.DECENT, opportunityScore: score }
+  return { status: WEBSITE_STATUS.DECENT, opportunityScore: score, weaknessEvidence }
+}
+
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
+
+/**
+ * Graded Website Need points for a WEAK/OUTDATED site (§5) — NOT a flat number. The
+ * worse the verified Website Opportunity score (closer to 0), the more the site
+ * behaves like a broken one (closer to WEAK_WEBSITE_NEED_MAX); the closer it sits to
+ * the DECENT threshold, the milder the need (closer to WEAK_WEBSITE_NEED_MIN).
+ * A never-verified WEAK (over the audit cap) gets the conservative midpoint.
+ */
+export function weakWebsiteNeedPoints(opportunityScore) {
+  if (typeof opportunityScore !== 'number') return Math.round((WEAK_WEBSITE_NEED_MIN + WEAK_WEBSITE_NEED_MAX) / 2)
+  const t = clamp(opportunityScore / DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE, 0, 1) // 0=worst, 1=borderline-decent
+  return Math.round(WEAK_WEBSITE_NEED_MAX - t * (WEAK_WEBSITE_NEED_MAX - WEAK_WEBSITE_NEED_MIN))
+}
+
+/**
+ * Graded Website Need points for a DECENT site (0-6) — the stronger the verified site,
+ * the closer to 0 (least need); a borderline-decent site still carries a little need.
+ */
+export function decentWebsiteNeedPoints(opportunityScore) {
+  if (typeof opportunityScore !== 'number') return DECENT_WEBSITE_NEED_MAX
+  const t = clamp((opportunityScore - DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE) / (100 - DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE), 0, 1)
+  return Math.round(DECENT_WEBSITE_NEED_MAX - t * (DECENT_WEBSITE_NEED_MAX - DECENT_WEBSITE_NEED_MIN))
 }

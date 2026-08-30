@@ -1,16 +1,19 @@
 import { useMemo, useState } from 'react'
-import { CALL_STATUSES, LEAD_TIERS, WEBSITE_STATUS_ORDER } from '../config/leadListQualification'
+import { CALL_STATUSES, LEAD_TIERS, WEBSITE_STATUS_ORDER, QUALIFICATION_STATUS, DISREGARD_REASON, DISREGARD_REASON_LABEL } from '../config/leadListQualification'
 import { LEAD_OWNER_VALUES } from '../services/leadListStorage'
 import { formatPhoneForDisplay } from '../utils/leadListCopyFormat'
+import { sortLeads } from '../utils/leadListSort'
 import styles from './LeadListTable.module.css'
 
 const TIER_OPTIONS = Object.values(LEAD_TIERS)
+const REASON_OPTIONS = Object.values(DISREGARD_REASON)
 // Render caps the on-screen table (never caps Copy/Export, which always use the full
 // filtered dataset passed in from the parent).
 const RENDER_CAP = 250
 
 export default function LeadListTable({
-  leads, showOwnerColumn = false, onStatusChange, onNotesChange, onOwnerChange, onOpenLead,
+  leads, showOwnerColumn = false, showQualificationFilter = false,
+  onStatusChange, onNotesChange, onOwnerChange, onOpenLead,
 }) {
   const [query, setQuery] = useState('')
   const [ownerFilter, setOwnerFilter] = useState('all')
@@ -18,6 +21,10 @@ export default function LeadListTable({
   const [websiteFilter, setWebsiteFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
+  // Master Leads defaults to Qualified only — Disregarded stays available for auditing
+  // via the filter, never mixed into the primary view by default (§26).
+  const [qualificationFilter, setQualificationFilter] = useState(QUALIFICATION_STATUS.QUALIFIED)
+  const [reasonFilter, setReasonFilter] = useState('all')
 
   const stateOptions = useMemo(() => {
     const s = new Set((leads ?? []).map(l => l.state).filter(Boolean))
@@ -27,6 +34,9 @@ export default function LeadListTable({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return (leads ?? []).filter(l => {
+      if (showQualificationFilter && qualificationFilter !== 'all' && l.qualificationStatus !== qualificationFilter) return false
+      if (showQualificationFilter && qualificationFilter === QUALIFICATION_STATUS.DISREGARDED && reasonFilter !== 'all' &&
+          !(l.disregardReasonCodes ?? []).includes(reasonFilter)) return false
       if (ownerFilter !== 'all' && l.leadOwner !== ownerFilter) return false
       if (tierFilter !== 'all' && l.leadTier !== tierFilter) return false
       if (websiteFilter !== 'all' && l.websiteStatus !== websiteFilter) return false
@@ -38,9 +48,9 @@ export default function LeadListTable({
       }
       return true
     })
-  }, [leads, query, ownerFilter, tierFilter, websiteFilter, statusFilter, stateFilter])
+  }, [leads, query, ownerFilter, tierFilter, websiteFilter, statusFilter, stateFilter, showQualificationFilter, qualificationFilter, reasonFilter])
 
-  const sorted = useMemo(() => filtered.slice().sort((a, b) => (b.leadScore ?? -1) - (a.leadScore ?? -1)), [filtered])
+  const sorted = useMemo(() => sortLeads(filtered), [filtered])
   const visible = sorted.slice(0, RENDER_CAP)
 
   return (
@@ -53,6 +63,19 @@ export default function LeadListTable({
           value={query}
           onChange={e => setQuery(e.target.value)}
         />
+        {showQualificationFilter && (
+          <select className={styles.select} value={qualificationFilter} onChange={e => setQualificationFilter(e.target.value)}>
+            <option value="all">Qualified + Disregarded</option>
+            <option value={QUALIFICATION_STATUS.QUALIFIED}>Qualified only</option>
+            <option value={QUALIFICATION_STATUS.DISREGARDED}>Disregarded only</option>
+          </select>
+        )}
+        {showQualificationFilter && qualificationFilter === QUALIFICATION_STATUS.DISREGARDED && (
+          <select className={styles.select} value={reasonFilter} onChange={e => setReasonFilter(e.target.value)}>
+            <option value="all">Any reason</option>
+            {REASON_OPTIONS.map(r => <option key={r} value={r}>{DISREGARD_REASON_LABEL[r] ?? r}</option>)}
+          </select>
+        )}
         {showOwnerColumn && (
           <select className={styles.select} value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
             <option value="all">Any owner</option>
@@ -91,6 +114,7 @@ export default function LeadListTable({
           <thead>
             <tr>
               <th>Rank</th>
+              {showQualificationFilter && <th>Qualification</th>}
               <th>Business Name</th>
               <th>Phone</th>
               <th>Category</th>
@@ -107,9 +131,16 @@ export default function LeadListTable({
           </thead>
           <tbody>
             {visible.map((l, i) => (
-              <tr key={l.id}>
+              <tr key={l.id} className={l.qualificationStatus === 'DISREGARDED' ? styles.disregardedRow : ''}>
                 <td>{i + 1}</td>
-                <td className={styles.nameCell} title={l.whyQualified ?? ''}>
+                {showQualificationFilter && (
+                  <td className={styles.qualCell} title={l.disregardExplanation ?? l.whyQualified ?? ''}>
+                    {l.qualificationStatus === 'DISREGARDED'
+                      ? `Disregarded (${(l.disregardReasonCodes ?? []).map(c => DISREGARD_REASON_LABEL[c] ?? c).join(', ')})`
+                      : 'Qualified'}
+                  </td>
+                )}
+                <td className={styles.nameCell} title={l.whyQualified ?? l.disregardExplanation ?? ''}>
                   {onOpenLead ? (
                     <button className={styles.nameBtn} onClick={() => onOpenLead(l)}>{l.businessName}</button>
                   ) : l.businessName}
@@ -119,13 +150,19 @@ export default function LeadListTable({
                 <td>{l.city}{l.city && l.state ? ', ' : ''}{l.state}</td>
                 <td>{typeof l.rating === 'number' ? `${l.rating} (${l.reviewCount ?? 0})` : '—'}</td>
                 <td>{l.websiteStatus}</td>
-                <td>{l.leadScore}</td>
-                <td>{l.leadTier}</td>
+                <td>{l.leadScore ?? '—'}</td>
+                <td>{l.leadTier ?? '—'}</td>
                 <td>{l.estimatedBuyingPower}</td>
                 {showOwnerColumn && (
                   <td>
                     {onOwnerChange ? (
-                      <select className={styles.inlineSelect} value={l.leadOwner} onChange={e => onOwnerChange(l.id, e.target.value)}>
+                      <select
+                        className={styles.inlineSelect}
+                        value={l.leadOwner}
+                        onChange={e => onOwnerChange(l.id, e.target.value)}
+                        disabled={l.qualificationStatus === 'DISREGARDED'}
+                        title={l.qualificationStatus === 'DISREGARDED' ? 'Disregarded leads cannot be assigned' : undefined}
+                      >
                         {LEAD_OWNER_VALUES.map(o => <option key={o} value={o}>{o}</option>)}
                       </select>
                     ) : l.leadOwner}

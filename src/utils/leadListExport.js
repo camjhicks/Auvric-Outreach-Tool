@@ -5,11 +5,14 @@
 
 import { buildXlsx } from './xlsxWriter.js'
 import { formatPhoneForDisplay } from './leadListCopyFormat.js'
+import { sortLeads } from './leadListSort.js'
 
 // key = master-lead field (or a derived value below); header = the exported column
 // title; width = XLSX column width; wrap = wrap long text (XLSX only).
 export const EXPORT_COLUMNS = Object.freeze([
   { key: 'rank', header: 'Rank', width: 8 },
+  { key: 'qualificationStatus', header: 'Qualification Status', width: 14 },
+  { key: 'disregardReasonDisplay', header: 'Disregard Reason', width: 26, wrap: true },
   { key: 'businessName', header: 'Business Name', width: 34 },
   { key: 'phoneDisplay', header: 'Phone Number', width: 16 },
   { key: 'category', header: 'Business Category', width: 22 },
@@ -40,14 +43,15 @@ export const EXPORT_COLUMNS = Object.freeze([
   { key: 'googlePlaceId', header: 'Google Place ID', width: 26 },
 ])
 
-/** Rank leads by score (desc) and attach the derived/display fields every export uses. */
+/** Rank leads with the canonical sort hierarchy and attach display fields every export uses. */
 export function toExportRows(leads) {
-  const sorted = (Array.isArray(leads) ? leads : []).slice().sort((a, b) => (b.leadScore ?? -1) - (a.leadScore ?? -1))
+  const sorted = sortLeads(leads)
   return sorted.map((l, i) => ({
     ...l,
     rank: i + 1,
     phoneDisplay: formatPhoneForDisplay(l.phone),
     highTicketIndustryDisplay: l.highTicketIndustry ? 'Yes' : 'No',
+    disregardReasonDisplay: Array.isArray(l.disregardReasonCodes) ? l.disregardReasonCodes.join(', ') : '',
   }))
 }
 

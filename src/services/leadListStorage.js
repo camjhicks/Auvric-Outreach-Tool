@@ -1,20 +1,22 @@
-// Lead Lists storage — Master Leads, rejected-candidate dedup history, and generation
-// run log. Three permanent stores behind their own read/write boundary (mirrors
-// callListStorage.js). Standalone from Saved Leads / Email Queue / Call List — this
-// module never reads or writes their storage keys. Malformed storage degrades to
-// empty instead of throwing. Dedup uses the ONE centralized identity matcher
-// (src/utils/leadIdentity.js) — no competing matcher.
+// Lead Lists storage — Master Leads (the SINGLE unified store of every processed
+// candidate, QUALIFIED or DISREGARDED — disregarded records are never deleted, only
+// excluded from caller lists) and the generation run log. Two permanent stores behind
+// their own read/write boundary (mirrors callListStorage.js). Standalone from Saved
+// Leads / Email Queue / Call List — this module never reads or writes their storage
+// keys. Malformed storage degrades to empty instead of throwing. Dedup uses the ONE
+// centralized identity matcher (src/utils/leadIdentity.js) — no competing matcher.
 
-import { leadsMatch, identityKey } from '../utils/leadIdentity.js'
-import { LEAD_TIERS, ASSIGNMENT_PEOPLE, DEFAULT_CALL_STATUS, CALL_STATUSES } from '../config/leadListQualification.js'
+import { leadsMatch } from '../utils/leadIdentity.js'
+import {
+  LEAD_TIERS, ASSIGNMENT_PEOPLE, DEFAULT_CALL_STATUS, CALL_STATUSES,
+  QUALIFICATION_STATUS, DISREGARD_REASON,
+} from '../config/leadListQualification.js'
 
 const MASTER_KEY = 'auvric_lead_list_master'
-const REJECTED_KEY = 'auvric_lead_list_rejected'
 const RUNS_KEY = 'auvric_lead_list_runs'
-export const LEAD_LIST_MIGRATION_VERSION = 1
+export const LEAD_LIST_MIGRATION_VERSION = 2
 
 let masterMemory = null
-let rejectedMemory = null
 let runsMemory = null
 
 function safeLS() { try { return globalThis.localStorage ?? null } catch { return null } }
@@ -59,6 +61,13 @@ function migrateMasterLead(rec) {
     websiteStatus: r.websiteStatus ?? null,
     websiteStatusVerified: Boolean(r.websiteStatusVerified),
     googleMapsUrl: r.googleMapsUrl ?? null,
+    // Processed-candidate status (§1) — QUALIFIED or DISREGARDED. A legacy record from
+    // before this field existed (migration v1) is treated as QUALIFIED since only
+    // qualified leads were ever persisted then.
+    qualificationStatus: r.qualificationStatus === QUALIFICATION_STATUS.DISREGARDED
+      ? QUALIFICATION_STATUS.DISREGARDED : QUALIFICATION_STATUS.QUALIFIED,
+    disregardReasonCodes: Array.isArray(r.disregardReasonCodes) ? r.disregardReasonCodes : [],
+    disregardExplanation: r.disregardExplanation ?? null,
     leadScore: typeof r.leadScore === 'number' ? r.leadScore : null,
     leadTier: r.leadTier ?? null,
     estimatedBuyingPower: r.estimatedBuyingPower ?? 'Unknown',
@@ -85,67 +94,54 @@ function migrateMasterLead(rec) {
   }
 }
 
-// ---- Master Leads -----------------------------------------------------------------
+// ---- Master Leads (unified: every processed candidate, QUALIFIED or DISREGARDED) --
 export function getMasterLeads() {
   return readArray(MASTER_KEY, masterMemory).filter(r => r && r.id).map(migrateMasterLead)
 }
 function setMasterLeads(list) { writeArray(MASTER_KEY, list, v => { masterMemory = v }) }
 
-// ---- Rejected-candidate registry (dedup history — compact, no full record) -------
-// { identityKey, businessName, googlePlaceId, phone, websiteUrl, address, rejectReason, rejectedAt }
-export function getRejectedRegistry() {
-  return readArray(REJECTED_KEY, rejectedMemory).filter(r => r && r.identityKey)
+/** Only QUALIFIED records (both assignable and B-tier reserve). */
+export function getQualifiedMasterLeads() {
+  return getMasterLeads().filter(l => l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED)
 }
-function setRejectedRegistry(list) { writeArray(REJECTED_KEY, list, v => { rejectedMemory = v }) }
+/** Only DISREGARDED records — kept for auditing, never shown in a caller list. */
+export function getDisregardedMasterLeads() {
+  return getMasterLeads().filter(l => l.qualificationStatus === QUALIFICATION_STATUS.DISREGARDED)
+}
 
-export function addRejectedCandidates(candidates) {
-  const existing = getRejectedRegistry()
-  const seen = new Set(existing.map(r => r.identityKey))
-  const now = new Date().toISOString()
-  const added = []
-  for (const c of Array.isArray(candidates) ? candidates : []) {
-    const key = identityKey(c)
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    added.push({
-      identityKey: key,
-      businessName: c.businessName ?? null,
-      googlePlaceId: c.googlePlaceId ?? c.providerId ?? null,
-      phone: c.phone ?? null,
-      websiteUrl: c.websiteUrl ?? null,
-      address: c.address ?? c.formattedAddress ?? null,
-      rejectReason: c.rejectReason ?? null,
-      rejectedAt: now,
-    })
-  }
-  if (added.length) setRejectedRegistry([...existing, ...added])
-  return { added: added.length, list: getRejectedRegistry() }
+/** Count of disregarded leads per reason code, for the run-summary breakdown (§25). */
+export function getDisregardBreakdown(leads = null) {
+  const list = leads ?? getDisregardedMasterLeads()
+  const breakdown = Object.fromEntries(Object.values(DISREGARD_REASON).map(code => [code, 0]))
+  for (const l of list) for (const code of l.disregardReasonCodes ?? []) breakdown[code] = (breakdown[code] ?? 0) + 1
+  return breakdown
 }
 
 /**
- * Compact identity descriptors of EVERY business already known (qualified in the
- * Master list OR previously rejected) — feeds /api/discover-leads' excludeLeads so a
- * generation run never re-fetches or re-evaluates the same business, and feeds the
- * generator's own in-run dedup. Never sent anywhere except our own server round-trip.
+ * Compact identity descriptors of EVERY business already processed (QUALIFIED or
+ * DISREGARDED — both live in Master Leads) — feeds /api/discover-leads' excludeLeads
+ * so a generation run never re-fetches, re-verifies, or re-scores the same business,
+ * and feeds the generator's own in-run dedup. Never sent anywhere except our own
+ * server round-trip.
  */
 export function getKnownIdentityDescriptors() {
-  const master = getMasterLeads().map(l => ({ googlePlaceId: l.googlePlaceId, businessName: l.businessName, phone: l.phone, websiteUrl: l.websiteUrl, address: null }))
-  const rejected = getRejectedRegistry().map(r => ({ googlePlaceId: r.googlePlaceId, businessName: r.businessName, phone: r.phone, websiteUrl: r.websiteUrl, address: r.address }))
-  return [...master, ...rejected]
+  return getMasterLeads().map(l => ({ googlePlaceId: l.googlePlaceId, businessName: l.businessName, phone: l.phone, websiteUrl: l.websiteUrl, address: null }))
 }
 
-/** True when a candidate matches an already-known (qualified or rejected) business. */
+/** True when a candidate matches an already-known (processed, any status) business. */
 export function isKnownCandidate(candidate, knownDescriptors = null) {
   const known = knownDescriptors ?? getKnownIdentityDescriptors()
   return known.some(k => leadsMatch(candidate, k))
 }
 
 /**
- * Insert newly QUALIFIED candidates into the Master Leads table. Deduplicates against
- * the current master (a candidate matching an existing master lead is skipped, never
- * duplicated or double-assigned). Returns { addedCount, skippedCount, leads }.
+ * Insert newly processed candidates — QUALIFIED or DISREGARDED — into the unified
+ * Master Leads table (§1: disregarded records are never deleted, only excluded from
+ * caller lists). Deduplicates against the current master by identity regardless of
+ * status (a candidate matching an existing master lead is skipped, never duplicated).
+ * Returns { addedCount, skippedCount, leads }.
  */
-export function addQualifiedLeads(scoredCandidates) {
+export function addProcessedCandidates(scoredCandidates) {
   const existing = getMasterLeads()
   let addedCount = 0
   let skippedCount = 0
@@ -170,6 +166,9 @@ export function addQualifiedLeads(scoredCandidates) {
       websiteStatus: c.websiteStatus,
       websiteStatusVerified: c.websiteStatusVerified,
       googleMapsUrl: c.googleMapsUrl,
+      qualificationStatus: c.qualificationStatus,
+      disregardReasonCodes: c.disregardReasonCodes ?? [],
+      disregardExplanation: c.disregardExplanation ?? null,
       leadScore: c.totalScore,
       leadTier: c.tier,
       estimatedBuyingPower: c.buyingPower,
@@ -183,7 +182,7 @@ export function addQualifiedLeads(scoredCandidates) {
       businessActivitySignals: c.scoreBreakdown?.find(f => f.factor === 'businessActivity')?.reason ?? null,
       whyQualified: c.whyQualified,
       recommendedCallAngle: c.recommendedCallAngle,
-      scoreBreakdown: c.scoreBreakdown,
+      scoreBreakdown: c.scoreBreakdown ?? [],
       leadOwner: 'Unassigned',
       status: DEFAULT_CALL_STATUS,
       notes: '',
@@ -228,12 +227,21 @@ export function updateLeadNotes(id, notes) {
   return { leads, changed: true }
 }
 
+// Manual reassignment (§17) — moving a lead between people, or back to Unassigned. A
+// DISREGARDED record can never be given an owner: caller lists must stay QUALIFIED
+// leads only (§26), so a disregarded lead is never eligible for manual assignment.
 export function updateLeadOwner(id, owner) {
   if (!LEAD_OWNER_VALUES.includes(owner)) return { leads: getMasterLeads(), changed: false }
   const now = new Date().toISOString()
-  const leads = getMasterLeads().map(l => (l.id === id ? { ...l, leadOwner: owner, assignedAt: owner === 'Unassigned' ? null : now, updatedAt: now } : l))
-  setMasterLeads(leads)
-  return { leads, changed: true }
+  let changed = false
+  const leads = getMasterLeads().map(l => {
+    if (l.id !== id) return l
+    if (owner !== 'Unassigned' && l.qualificationStatus === QUALIFICATION_STATUS.DISREGARDED) return l
+    changed = true
+    return { ...l, leadOwner: owner, assignedAt: owner === 'Unassigned' ? null : now, updatedAt: now }
+  })
+  if (changed) setMasterLeads(leads)
+  return { leads, changed }
 }
 
 // ---- Generation run log (History tab) ---------------------------------------------
@@ -245,6 +253,18 @@ export function recordRun(summary) {
   const entry = { id: (globalThis.crypto?.randomUUID?.() ?? `run_${Date.now()}`), createdAt: new Date().toISOString(), ...summary }
   setRuns([entry, ...runs].slice(0, 200)) // bounded history
   return entry
+}
+
+/** Patch fields onto an already-recorded run (used to attach assignment results, which
+ * happen as a separate step right after generation completes). */
+export function updateRunSummary(runId, patch) {
+  const runs = getRuns()
+  const idx = runs.findIndex(r => r.id === runId)
+  if (idx === -1) return null
+  const next = runs.slice()
+  next[idx] = { ...next[idx], ...patch }
+  setRuns(next)
+  return next[idx]
 }
 
 export { LEAD_TIERS }

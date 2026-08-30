@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import LeadListGeneratePanel from './LeadListGeneratePanel'
 import LeadListTable from './LeadListTable'
 import LeadListPersonCard from './LeadListPersonCard'
 import { runLeadListGeneration } from '../utils/leadListGenerator'
 import { assignLeadsToOwners } from '../utils/leadListAssignment'
 import {
-  getMasterLeads, updateLeadStatus, updateLeadNotes, updateLeadOwner, assignLeadOwners, getRuns,
+  getMasterLeads, getQualifiedMasterLeads, updateLeadStatus, updateLeadNotes, updateLeadOwner,
+  assignLeadOwners, getRuns, updateRunSummary,
 } from '../services/leadListStorage'
 import { downloadLeadListCSV, downloadLeadListXLSX, EXPORT_FILENAMES } from '../utils/leadListExport'
 import { resolveIndustrySelection } from '../config/leadListIndustries'
-import { ASSIGNMENT_QUOTAS, ASSIGNMENT_PEOPLE } from '../config/leadListQualification'
+import {
+  ASSIGNMENT_QUOTAS, ASSIGNMENT_PEOPLE, ASSIGNMENT_ELIGIBLE_TIERS, QUALIFICATION_STATUS,
+} from '../config/leadListQualification'
 import styles from './LeadListsScreen.module.css'
 
 const TABS = [
@@ -33,19 +36,30 @@ export default function LeadListsScreen({ onBack }) {
     setRuns(getRuns())
   }
 
-  // Automatically fill remaining quota gaps from ALL currently-unassigned qualified
-  // leads (this run's new ones plus any left over from a prior run) — spec §"Automatic
-  // Assignment": every generation run tries to keep Jaco/Marc/Cameron topped up.
-  function runAutoAssignment() {
+  // Automatically fill remaining quota gaps from ALL currently-unassigned QUALIFIED
+  // leads AT OR ABOVE the configured assignment tier (this run's new ones plus any
+  // left over from a prior run) — §16/§17: every generation run tries to keep
+  // Jaco/Marc/Cameron topped up, B-tier stays reserve, ownership never moves once set.
+  function runAutoAssignment(runId) {
     const current = getMasterLeads()
     const alreadyAssigned = ASSIGNMENT_PEOPLE.reduce((acc, p) => {
       const label = p.charAt(0).toUpperCase() + p.slice(1)
       acc[p] = current.filter(l => l.leadOwner === label).length
       return acc
     }, {})
-    const unassigned = current.filter(l => l.leadOwner === 'Unassigned')
-    const { assignments } = assignLeadsToOwners(unassigned, { quotas: ASSIGNMENT_QUOTAS, alreadyAssigned })
+    const eligible = current.filter(l =>
+      l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED &&
+      l.leadOwner === 'Unassigned' &&
+      ASSIGNMENT_ELIGIBLE_TIERS.includes(l.leadTier)
+    )
+    const { assignments, unassigned, counts } = assignLeadsToOwners(eligible, { quotas: ASSIGNMENT_QUOTAS, alreadyAssigned })
     if (assignments.length > 0) assignLeadOwners(assignments)
+    if (runId) {
+      updateRunSummary(runId, {
+        assignedJaco: counts.Jaco ?? 0, assignedMarc: counts.Marc ?? 0, assignedCameron: counts.Cameron ?? 0,
+        unassignedQualified: unassigned.length,
+      })
+    }
     refresh()
   }
 
@@ -56,13 +70,13 @@ export default function LeadListsScreen({ onBack }) {
     setLastSummary(null)
     setProgress(null)
     try {
-      const { summary } = await runLeadListGeneration({
+      const { summary, runId } = await runLeadListGeneration({
         industries, locations, targetQualifiedCount, enrichReviews,
         onProgress: p => { setProgress(p); refresh() },
         control: controlRef.current,
       })
       setLastSummary(summary)
-      runAutoAssignment()
+      runAutoAssignment(runId)
     } finally {
       setIsRunning(false)
       refresh()
@@ -77,17 +91,27 @@ export default function LeadListsScreen({ onBack }) {
   function handleNotesChange(id, notes) { updateLeadNotes(id, notes); refresh() }
   function handleOwnerChange(id, owner) { updateLeadOwner(id, owner); refresh() }
 
+  // Caller tabs must contain QUALIFIED ASSIGNED LEADS ONLY (§26) — a disregarded record
+  // never has an owner in the first place, but this filter is an explicit guarantee,
+  // not just an implicit one.
   const byOwner = useMemo(() => {
     const map = { Jaco: [], Marc: [], Cameron: [] }
-    for (const l of masterLeads) if (map[l.leadOwner]) map[l.leadOwner].push(l)
+    for (const l of masterLeads) {
+      if (l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED && map[l.leadOwner]) map[l.leadOwner].push(l)
+    }
     return map
   }, [masterLeads])
 
-  const counts = useMemo(() => ({
-    all: masterLeads.length,
-    unassigned: masterLeads.filter(l => l.leadOwner === 'Unassigned').length,
-    jaco: byOwner.Jaco.length, marc: byOwner.Marc.length, cameron: byOwner.Cameron.length,
-  }), [masterLeads, byOwner])
+  const counts = useMemo(() => {
+    const qualified = masterLeads.filter(l => l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED)
+    const disregarded = masterLeads.length - qualified.length
+    const reserve = qualified.filter(l => !ASSIGNMENT_ELIGIBLE_TIERS.includes(l.leadTier) && l.leadOwner === 'Unassigned').length
+    return {
+      all: masterLeads.length, qualified: qualified.length, disregarded,
+      unassigned: qualified.filter(l => l.leadOwner === 'Unassigned').length, reserve,
+      jaco: byOwner.Jaco.length, marc: byOwner.Marc.length, cameron: byOwner.Cameron.length,
+    }
+  }, [masterLeads, byOwner])
 
   return (
     <div className={styles.screen}>
@@ -95,7 +119,9 @@ export default function LeadListsScreen({ onBack }) {
         <button className={styles.backBtn} onClick={onBack}>← Back</button>
         <div className={styles.heading}>
           <h2 className={styles.title}>Lead Lists</h2>
-          <span className={styles.count}>{counts.all} qualified · {counts.unassigned} unassigned</span>
+          <span className={styles.count}>
+            {counts.qualified} qualified ({counts.reserve} B-tier reserve) · {counts.disregarded} disregarded · {counts.unassigned} unassigned
+          </span>
         </div>
       </div>
 
@@ -134,11 +160,12 @@ export default function LeadListsScreen({ onBack }) {
             </button>
           </div>
           {masterLeads.length === 0 ? (
-            <p className={styles.empty}>No qualified leads yet — run Generate to build the Master Leads table.</p>
+            <p className={styles.empty}>No processed leads yet — run Generate to build the Master Leads table.</p>
           ) : (
             <LeadListTable
               leads={masterLeads}
               showOwnerColumn
+              showQualificationFilter
               onStatusChange={handleStatusChange}
               onNotesChange={handleNotesChange}
               onOwnerChange={handleOwnerChange}
@@ -160,29 +187,49 @@ export default function LeadListsScreen({ onBack }) {
           {runs.length === 0 ? (
             <p className={styles.empty}>No generation runs yet.</p>
           ) : (
-            <table className={styles.historyTable}>
-              <thead>
-                <tr>
-                  <th>Date</th><th>Industries</th><th>Locations</th><th>Found</th><th>Duplicates</th>
-                  <th>Rejected</th><th>Qualified</th><th>Saved</th><th>Stopped</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map(r => (
-                  <tr key={r.id}>
-                    <td>{new Date(r.createdAt).toLocaleString()}</td>
-                    <td>{(r.industries ?? []).length}</td>
-                    <td>{(r.locations ?? []).join(', ')}</td>
-                    <td>{r.candidatesFound}</td>
-                    <td>{r.duplicatesRemoved}</td>
-                    <td>{r.rejected}</td>
-                    <td>{r.qualified}</td>
-                    <td>{r.savedCount}</td>
-                    <td>{r.stoppedReason?.replace(/_/g, ' ')}</td>
+            <div className={styles.historyScroll}>
+              <table className={styles.historyTable}>
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Industries</th><th>Locations</th><th>Found</th><th>Known</th>
+                    <th>Duplicates</th><th>Hard Rejected</th><th>Scored</th>
+                    <th>S</th><th>A+</th><th>A</th><th>B</th><th>Disregarded</th>
+                    <th>Jaco</th><th>Marc</th><th>Cameron</th><th>Unassigned</th>
+                    <th>Top Disregard Reasons</th><th>Stopped</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {runs.map(r => {
+                    const topReasons = Object.entries(r.disregardBreakdown ?? {})
+                      .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
+                      .map(([code, n]) => `${n} ${code.replace(/_/g, ' ')}`).join(', ')
+                    return (
+                      <tr key={r.id}>
+                        <td>{new Date(r.createdAt).toLocaleString()}</td>
+                        <td>{(r.industries ?? []).length}</td>
+                        <td>{(r.locations ?? []).join(', ')}</td>
+                        <td>{r.candidatesFound}</td>
+                        <td>{r.previouslyKnown ?? 0}</td>
+                        <td>{r.duplicatesRemoved}</td>
+                        <td>{r.hardRejected ?? 0}</td>
+                        <td>{r.scored ?? 0}</td>
+                        <td>{r.tierBreakdown?.S ?? 0}</td>
+                        <td>{r.tierBreakdown?.['A+'] ?? 0}</td>
+                        <td>{r.tierBreakdown?.A ?? 0}</td>
+                        <td>{r.tierBreakdown?.B ?? 0}</td>
+                        <td>{r.disregarded ?? 0}</td>
+                        <td>{r.assignedJaco ?? 0}</td>
+                        <td>{r.assignedMarc ?? 0}</td>
+                        <td>{r.assignedCameron ?? 0}</td>
+                        <td>{r.unassignedQualified ?? 0}</td>
+                        <td className={styles.reasonsCell} title={topReasons}>{topReasons || '—'}</td>
+                        <td>{r.stoppedReason?.replace(/_/g, ' ')}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
