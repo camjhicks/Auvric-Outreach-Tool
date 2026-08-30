@@ -23,6 +23,8 @@ export const EXPORT_COLUMNS = Object.freeze([
   { key: 'recentReviewActivity', header: 'Recent Review Activity', width: 16 },
   { key: 'websiteUrl', header: 'Website URL', width: 30 },
   { key: 'websiteStatus', header: 'Website Status', width: 18 },
+  { key: 'brokenVerification', header: 'Broken Verification', width: 14 },
+  { key: 'assignmentEligibility', header: 'Assignment Eligibility', width: 16 },
   { key: 'googleMapsUrl', header: 'Google Maps URL', width: 30 },
   { key: 'leadScore', header: 'Lead Score', width: 10 },
   { key: 'leadTier', header: 'Lead Tier', width: 9 },

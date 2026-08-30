@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
-import { CALL_STATUSES, LEAD_TIERS, WEBSITE_STATUS_ORDER, QUALIFICATION_STATUS, DISREGARD_REASON, DISREGARD_REASON_LABEL } from '../config/leadListQualification'
+import {
+  CALL_STATUSES, LEAD_TIERS, WEBSITE_STATUS, WEBSITE_STATUS_ORDER, QUALIFICATION_STATUS,
+  DISREGARD_REASON, DISREGARD_REASON_LABEL, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY,
+} from '../config/leadListQualification'
 import { LEAD_OWNER_VALUES } from '../services/leadListStorage'
 import { formatPhoneForDisplay } from '../utils/leadListCopyFormat'
 import { sortLeads } from '../utils/leadListSort'
@@ -7,6 +10,23 @@ import styles from './LeadListTable.module.css'
 
 const TIER_OPTIONS = Object.values(LEAD_TIERS)
 const REASON_OPTIONS = Object.values(DISREGARD_REASON)
+const BROKEN_VERIFICATION_OPTIONS = Object.values(BROKEN_VERIFICATION)
+const ASSIGNMENT_ELIGIBILITY_OPTIONS = Object.values(ASSIGNMENT_ELIGIBILITY)
+const ASSIGNMENT_ELIGIBILITY_LABEL = {
+  [ASSIGNMENT_ELIGIBILITY.ELIGIBLE]: 'Eligible',
+  [ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE]: 'Not eligible',
+  [ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW]: 'Manual review',
+}
+
+// Explicit "BROKEN WEBSITE - VERIFIED"/"- UNVERIFIED" so the table never shows a bare,
+// ambiguous "BROKEN WEBSITE" for this campaign's locked eligibility rule.
+function websiteStatusLabel(lead) {
+  if (lead.websiteStatus === WEBSITE_STATUS.BROKEN) {
+    return lead.brokenVerification === BROKEN_VERIFICATION.VERIFIED
+      ? 'BROKEN WEBSITE - VERIFIED' : 'BROKEN WEBSITE - UNVERIFIED'
+  }
+  return lead.websiteStatus ?? '—'
+}
 // Render caps the on-screen table (never caps Copy/Export, which always use the full
 // filtered dataset passed in from the parent).
 const RENDER_CAP = 250
@@ -19,6 +39,8 @@ export default function LeadListTable({
   const [ownerFilter, setOwnerFilter] = useState('all')
   const [tierFilter, setTierFilter] = useState('all')
   const [websiteFilter, setWebsiteFilter] = useState('all')
+  const [brokenVerificationFilter, setBrokenVerificationFilter] = useState('all')
+  const [eligibilityFilter, setEligibilityFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   // Master Leads defaults to Qualified only — Disregarded stays available for auditing
@@ -40,6 +62,8 @@ export default function LeadListTable({
       if (ownerFilter !== 'all' && l.leadOwner !== ownerFilter) return false
       if (tierFilter !== 'all' && l.leadTier !== tierFilter) return false
       if (websiteFilter !== 'all' && l.websiteStatus !== websiteFilter) return false
+      if (brokenVerificationFilter !== 'all' && (l.brokenVerification ?? BROKEN_VERIFICATION.NOT_APPLICABLE) !== brokenVerificationFilter) return false
+      if (eligibilityFilter !== 'all' && l.assignmentEligibility !== eligibilityFilter) return false
       if (statusFilter !== 'all' && l.status !== statusFilter) return false
       if (stateFilter !== 'all' && l.state !== stateFilter) return false
       if (q) {
@@ -48,7 +72,7 @@ export default function LeadListTable({
       }
       return true
     })
-  }, [leads, query, ownerFilter, tierFilter, websiteFilter, statusFilter, stateFilter, showQualificationFilter, qualificationFilter, reasonFilter])
+  }, [leads, query, ownerFilter, tierFilter, websiteFilter, brokenVerificationFilter, eligibilityFilter, statusFilter, stateFilter, showQualificationFilter, qualificationFilter, reasonFilter])
 
   const sorted = useMemo(() => sortLeads(filtered), [filtered])
   const visible = sorted.slice(0, RENDER_CAP)
@@ -90,6 +114,14 @@ export default function LeadListTable({
           <option value="all">Any website status</option>
           {WEBSITE_STATUS_ORDER.map(w => <option key={w} value={w}>{w}</option>)}
         </select>
+        <select className={styles.select} value={brokenVerificationFilter} onChange={e => setBrokenVerificationFilter(e.target.value)}>
+          <option value="all">Any broken verification</option>
+          {BROKEN_VERIFICATION_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <select className={styles.select} value={eligibilityFilter} onChange={e => setEligibilityFilter(e.target.value)}>
+          <option value="all">Any assignment eligibility</option>
+          {ASSIGNMENT_ELIGIBILITY_OPTIONS.map(v => <option key={v} value={v}>{ASSIGNMENT_ELIGIBILITY_LABEL[v] ?? v}</option>)}
+        </select>
         <select className={styles.select} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="all">Any call status</option>
           {CALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -121,6 +153,7 @@ export default function LeadListTable({
               <th>City / State</th>
               <th>Rating</th>
               <th>Website Status</th>
+              <th>Eligibility</th>
               <th>Score</th>
               <th>Tier</th>
               <th>Buying Power</th>
@@ -149,7 +182,8 @@ export default function LeadListTable({
                 <td>{l.category}</td>
                 <td>{l.city}{l.city && l.state ? ', ' : ''}{l.state}</td>
                 <td>{typeof l.rating === 'number' ? `${l.rating} (${l.reviewCount ?? 0})` : '—'}</td>
-                <td>{l.websiteStatus}</td>
+                <td>{websiteStatusLabel(l)}</td>
+                <td>{l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED ? (ASSIGNMENT_ELIGIBILITY_LABEL[l.assignmentEligibility] ?? '—') : '—'}</td>
                 <td>{l.leadScore ?? '—'}</td>
                 <td>{l.leadTier ?? '—'}</td>
                 <td>{l.estimatedBuyingPower}</td>

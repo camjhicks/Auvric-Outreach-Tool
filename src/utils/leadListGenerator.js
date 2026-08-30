@@ -23,11 +23,12 @@ import {
   getKnownIdentityDescriptors, addProcessedCandidates, getDisregardBreakdown, recordRun,
 } from '../services/leadListStorage.js'
 import { scoreCandidate, evaluateHardRejects } from './leadListScoring.js'
-import { classifyFreeWebsiteStatus, classifyVerifiedWebsiteStatus } from './leadListWebsiteStatus.js'
+import { classifyFreeWebsiteStatus, classifySingleAttempt, resolveWebsiteVerification, needsRetry } from './leadListWebsiteStatus.js'
 import { computeWebsiteOpportunity } from './websiteOpportunity.js'
 import { leadsMatch, normalizePhoneDigits } from './leadIdentity.js'
 import {
   GENERATION_DEFAULTS, TOTAL_ASSIGNMENT_TARGET, QUALIFICATION_STATUS, LEAD_TIERS,
+  WEBSITE_STATUS, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY,
 } from '../config/leadListQualification.js'
 
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -83,7 +84,7 @@ export async function runLeadListGeneration(opts) {
   const counters = {
     candidatesFound: 0, duplicatesRemoved: 0, previouslyKnown: 0, hardRejected: 0,
     scored: 0, qualified: 0, disregarded: 0, assigned: 0,
-    discoveryRequests: 0, websiteVerifications: 0, reviewEnrichments: 0,
+    discoveryRequests: 0, websiteVerifications: 0, brokenRetries: 0, reviewEnrichments: 0,
   }
   let stoppedReason = null
   const pool = [] // cleaned, not-yet-known candidates gathered this run
@@ -179,7 +180,10 @@ export async function runLeadListGeneration(opts) {
   reportProgress(onProgress, { stage: 'Checking hard-reject rules', ...counters })
 
   // ---- Stage 5: Checking websites (verified via the EXISTING audit crawler) — only
-  // for hard-reject survivors, so obvious rejects never spend this budget. -----------
+  // for hard-reject survivors, so obvious rejects never spend this budget. A candidate
+  // whose FIRST attempt looks broken-ish (and isn't automation-block-suspected) gets a
+  // SECOND independent attempt before it can ever become VERIFIED broken — a single
+  // failed request is never enough (§ broken-website verification). ------------------
   reportProgress(onProgress, { stage: 'Checking websites', ...counters })
   for (const c of survivors) {
     const free = classifyFreeWebsiteStatus(c)
@@ -187,6 +191,7 @@ export async function runLeadListGeneration(opts) {
   }
   const needsVerification = survivors.filter(c => !c.websiteStatus)
   const verifyBudget = Math.min(needsVerification.length, cfg.maxWebsiteVerificationsPerRun)
+  const firstAttempts = new Map() // candidate -> classifySingleAttempt() result
   for (let i = 0; i < verifyBudget && !control.cancelled; i += cfg.websiteVerificationBatchSize) {
     const batch = needsVerification.slice(i, i + cfg.websiteVerificationBatchSize)
     const urls = batch.map(c => c.websiteUrl)
@@ -199,22 +204,66 @@ export async function runLeadListGeneration(opts) {
     }
     for (const c of batch) {
       const r = results.find(x => x.requestedUrl === c.websiteUrl || x.normalizedUrl === c.websiteUrl)
-      if (!r) continue // stays unverified — conservative default applied below
+      if (!r) continue // no attempt happened at all — stays unverified below
       const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: industryById.get(c.industryId)?.serviceFamily ?? null })
-      const { status, opportunityScore, weaknessEvidence } = classifyVerifiedWebsiteStatus(r, opportunity)
-      c.websiteStatus = status
-      c.websiteStatusVerified = true
-      c.websiteOpportunityScore = opportunityScore
-      c.websiteWeaknessEvidence = weaknessEvidence
+      firstAttempts.set(c, classifySingleAttempt(r, opportunity))
       counters.websiteVerifications++
     }
     reportProgress(onProgress, { stage: 'Checking websites', ...counters })
     await sleepFn(cfg.websiteVerificationPaceMs)
   }
-  // Anything left unverified (real domain, over the verification cap) gets the
-  // conservative default so it is never claimed to be broken or decent without evidence.
+
+  // ---- Stage 5b: Broken-website confirmation retry (only for the narrow subset whose
+  // first attempt suggested broken-and-not-automation-blocked) — verifies the failure
+  // repeats before ever calling a site broken. ---------------------------------------
+  reportProgress(onProgress, { stage: 'Verifying broken websites', ...counters })
+  const retryCandidates = survivors.filter(c => needsRetry(firstAttempts.get(c)))
+  const retryBudget = Math.min(retryCandidates.length, cfg.maxBrokenRetriesPerRun)
+  const secondAttempts = new Map()
+  for (let i = 0; i < retryBudget && !control.cancelled; i += cfg.brokenRetryBatchSize) {
+    const batch = retryCandidates.slice(i, i + cfg.brokenRetryBatchSize)
+    const urls = batch.map(c => c.websiteUrl)
+    let results
+    try {
+      results = await runBulkAuditFn(urls)
+    } catch (err) {
+      reportProgress(onProgress, { stage: 'Verifying broken websites', warning: err.message, ...counters })
+      results = []
+    }
+    for (const c of batch) {
+      const r = results.find(x => x.requestedUrl === c.websiteUrl || x.normalizedUrl === c.websiteUrl)
+      if (!r) continue // retry never happened — resolves as unverified below
+      const opportunity = computeWebsiteOpportunity(r.evidence, { serviceFamily: industryById.get(c.industryId)?.serviceFamily ?? null })
+      secondAttempts.set(c, classifySingleAttempt(r, opportunity))
+      counters.brokenRetries++
+    }
+    reportProgress(onProgress, { stage: 'Verifying broken websites', ...counters })
+    await sleepFn(cfg.brokenRetryPaceMs)
+  }
+
+  // ---- Resolve final website status + broken-verification for every survivor -------
   for (const c of survivors) {
-    if (!c.websiteStatus) { c.websiteStatus = 'WEAK/OUTDATED WEBSITE'; c.websiteStatusVerified = false }
+    if (c.websiteStatus) continue // already resolved for free (NO WEBSITE / SOCIAL-ONLY)
+    const first = firstAttempts.get(c)
+    if (!first) {
+      // No attempt happened at all (budget exhausted before this candidate) — the
+      // conservative default: never claim BROKEN with zero evidence.
+      c.websiteStatus = WEBSITE_STATUS.WEAK
+      c.brokenVerification = BROKEN_VERIFICATION.NOT_APPLICABLE
+      c.websiteStatusVerified = false
+      continue
+    }
+    const attempts = needsRetry(first) ? [first, secondAttempts.get(c) ?? null] : [first]
+    const resolved = resolveWebsiteVerification(attempts)
+    c.websiteStatus = resolved.status
+    c.brokenVerification = resolved.brokenVerification
+    c.websiteStatusVerified = resolved.brokenVerification !== BROKEN_VERIFICATION.UNVERIFIED || resolved.status !== WEBSITE_STATUS.BROKEN
+    c.websiteOpportunityScore = resolved.opportunityScore
+    c.websiteWeaknessEvidence = resolved.weaknessEvidence
+    if (resolved.status !== WEBSITE_STATUS.BROKEN) c.brokenVerification = BROKEN_VERIFICATION.NOT_APPLICABLE
+  }
+  for (const c of survivors) {
+    if (!c.brokenVerification) c.brokenVerification = BROKEN_VERIFICATION.NOT_APPLICABLE
     if (!c.recentReviewActivity) c.recentReviewActivity = 'Unknown'
   }
 
@@ -272,11 +321,48 @@ export async function runLeadListGeneration(opts) {
     ...hardRejectedRecords, ...scoredRecords.filter(r => r.qualificationStatus === QUALIFICATION_STATUS.DISREGARDED),
   ])
 
+  // Website-status breakdown across every candidate that reached classification (both
+  // qualified and disregarded — hard-rejected candidates never got classified).
+  const websiteStatusBreakdown = {
+    noWebsite: 0, socialOnly: 0, broken: 0, brokenVerified: 0, brokenUnverified: 0, weak: 0, decent: 0,
+  }
+  for (const c of survivors) {
+    if (c.websiteStatus === WEBSITE_STATUS.NONE) websiteStatusBreakdown.noWebsite++
+    else if (c.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY) websiteStatusBreakdown.socialOnly++
+    else if (c.websiteStatus === WEBSITE_STATUS.BROKEN) {
+      websiteStatusBreakdown.broken++
+      if (c.brokenVerification === BROKEN_VERIFICATION.VERIFIED) websiteStatusBreakdown.brokenVerified++
+      else websiteStatusBreakdown.brokenUnverified++
+    } else if (c.websiteStatus === WEBSITE_STATUS.WEAK) websiteStatusBreakdown.weak++
+    else if (c.websiteStatus === WEBSITE_STATUS.DECENT) websiteStatusBreakdown.decent++
+  }
+
+  // Assignment-eligibility breakdown among QUALIFIED leads only (§ this campaign's
+  // locked caller-list eligibility) — how many are actually usable this round vs. held
+  // for manual review vs. simply not part of this campaign.
+  const qualifiedThisRunAll = scoredRecords.filter(r => r.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED)
+  const eligibleForAssignment = qualifiedThisRunAll.filter(r => r.assignmentEligibility === ASSIGNMENT_ELIGIBILITY.ELIGIBLE).length
+  const manualReview = qualifiedThisRunAll.filter(r => r.assignmentEligibility === ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW).length
+
+  // "Not assigned because" — merges campaign-ineligibility (website status) with the
+  // disregard-reason breakdown into ONE readable tally (§25 example list).
+  const notAssignedBecause = {
+    socialOnly: qualifiedThisRunAll.filter(r => r.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY).length,
+    weakOutdated: qualifiedThisRunAll.filter(r => r.websiteStatus === WEBSITE_STATUS.WEAK).length,
+    decent: qualifiedThisRunAll.filter(r => r.websiteStatus === WEBSITE_STATUS.DECENT).length,
+    brokenUnverified: manualReview,
+    lowScore: disregardBreakdown.LOW_FINAL_SCORE ?? 0,
+    noPhone: disregardBreakdown.NO_PHONE ?? 0,
+    chainCorporate: (disregardBreakdown.CORPORATE_CHAIN ?? 0) + (disregardBreakdown.FRANCHISE_OR_CENTRALIZED_MARKETING ?? 0),
+    duplicate: counters.duplicatesRemoved,
+  }
+
   const summary = {
     industries: industries.map(i => i.id), locations: locations.slice(),
     targetQualifiedCount, ...counters, savedCount, skippedCount, stoppedReason,
     enrichReviews: Boolean(enrichReviews),
-    tierBreakdown, disregardBreakdown,
+    tierBreakdown, disregardBreakdown, websiteStatusBreakdown, notAssignedBecause,
+    qualifiedForAssignment: eligibleForAssignment, manualReview,
     // Filled in by the caller after auto-assignment runs (a separate step — see
     // LeadListsScreen.runAutoAssignment) via updateRunSummary(runId, {...}).
     assignedJaco: 0, assignedMarc: 0, assignedCameron: 0, unassignedQualified: 0,

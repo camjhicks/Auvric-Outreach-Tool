@@ -19,6 +19,7 @@ import {
   MIN_DECISION_MAKER_REACHABILITY_SCORE, UNKNOWN_BUYING_POWER_MIN_SCORE,
   DECENT_WEBSITE_MIN_OTHER_SCORE,
   BUYING_POWER, CUSTOMER_VALUE_BAND,
+  ASSIGNMENT_ELIGIBILITY, CAMPAIGN_ELIGIBLE_WEBSITE_STATUSES, BROKEN_VERIFICATION,
 } from '../config/leadListQualification.js'
 import { evaluateChainRisk } from './qualification.js'
 import { CHAIN_RISK_LEVELS } from '../config/qualification.js'
@@ -218,33 +219,54 @@ function tierForScore(score) {
   return null
 }
 
+// ---- Assignment eligibility (this campaign locks caller lists to NO WEBSITE and
+// VERIFIED-broken only) — orthogonal to qualificationStatus. A genuinely QUALIFIED,
+// well-scored SOCIAL-ONLY/WEAK/DECENT business is NOT_ELIGIBLE for THIS campaign, not
+// disregarded as a bad lead. An UNVERIFIED broken site goes to MANUAL_REVIEW rather
+// than being silently excluded or silently assigned. -------------------------------
+function computeAssignmentEligibility(c) {
+  if (!CAMPAIGN_ELIGIBLE_WEBSITE_STATUSES.includes(c.websiteStatus)) return ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE
+  if (c.websiteStatus === WEBSITE_STATUS.BROKEN) {
+    return c.brokenVerification === BROKEN_VERIFICATION.VERIFIED
+      ? ASSIGNMENT_ELIGIBILITY.ELIGIBLE
+      : ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW
+  }
+  return ASSIGNMENT_ELIGIBILITY.ELIGIBLE // WEBSITE_STATUS.NONE
+}
+
 // ---- Why qualified / call angle (concise, evidence-based, never generic fluff) ---
 
+// Evidence-based only — never references the scraper/crawler/AI itself (a customer-
+// facing explanation describes what a NORMAL CUSTOMER would experience, not our tooling).
 function buildWhyQualified(c) {
   const parts = []
   if (c.websiteStatus === WEBSITE_STATUS.NONE) parts.push('no standalone website')
   else if (c.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY) parts.push('social-only presence, no real website')
-  else if (c.websiteStatus === WEBSITE_STATUS.BROKEN) parts.push('broken/unreachable website')
-  else if (c.websiteStatus === WEBSITE_STATUS.WEAK) {
+  else if (c.websiteStatus === WEBSITE_STATUS.BROKEN) {
+    parts.push(c.brokenVerification === BROKEN_VERIFICATION.VERIFIED
+      ? 'existing website repeatedly fails to load for normal browser requests'
+      : 'existing website appears broken, pending manual confirmation')
+  } else if (c.websiteStatus === WEBSITE_STATUS.WEAK) {
     parts.push(c.websiteWeaknessEvidence ? `weak/outdated website (${c.websiteWeaknessEvidence})` : 'weak/outdated website')
   }
+  parts.push('active business profile')
   if (typeof c.reviewCount === 'number' && typeof c.rating === 'number') {
     parts.push(`${c.rating} stars across ${c.reviewCount} reviews`)
   }
   if (c.recentReviewActivity === 'Recent') parts.push('recent profile activity')
   if (c.phone && !isTollFreePhone(c.phone)) parts.push('local phone number')
-  if (c.highTicketWeight === 3) parts.push('high website importance')
+  if (c.highTicketWeight === 3) parts.push('strong website dependence')
   if ((c.locationCountEstimate ?? 1) <= LOCATION_COUNT_IDEAL_MAX) parts.push('independently operated')
-  if (!c.websiteStatusVerified && c.websiteStatus !== WEBSITE_STATUS.NONE && c.websiteStatus !== WEBSITE_STATUS.SOCIAL_ONLY) {
-    parts.push('website status estimated, not yet verified')
+  if (!c.websiteStatusVerified && c.websiteStatus !== WEBSITE_STATUS.NONE && c.websiteStatus !== WEBSITE_STATUS.SOCIAL_ONLY && c.websiteStatus !== WEBSITE_STATUS.BROKEN) {
+    parts.push('website quality estimated, not yet fully verified')
   }
   return parts.length ? parts.join(', ') + '.' : 'Meets the minimum qualification threshold on available evidence.'
 }
 
 function buildCallAngle(c) {
-  if (c.websiteStatus === WEBSITE_STATUS.NONE) return 'No website connected to an active Google profile.'
+  if (c.websiteStatus === WEBSITE_STATUS.NONE) return 'No website connected to an active business profile.'
   if (c.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY) return 'Customers currently rely on social media instead of a dedicated website.'
-  if (c.websiteStatus === WEBSITE_STATUS.BROKEN) return 'Existing website appears inaccessible/broken.'
+  if (c.websiteStatus === WEBSITE_STATUS.BROKEN) return 'Existing website appears genuinely unavailable to customers.'
   if (c.websiteStatus === WEBSITE_STATUS.WEAK) {
     return c.websiteWeaknessEvidence
       ? `Strong business reputation, but the current site creates friction: ${c.websiteWeaknessEvidence}.`
@@ -309,6 +331,7 @@ export function scoreCandidate(candidate) {
       totalScore: null, tier: null, scoreBreakdown: [],
       buyingPower: BUYING_POWER.UNKNOWN, estimatedCustomerValue: estimateCustomerValue(c),
       whyQualified: null, recommendedCallAngle: null, chainRiskLevel: hard.chainRiskLevel,
+      assignmentEligibility: ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE,
     }
   }
 
@@ -335,6 +358,7 @@ export function scoreCandidate(candidate) {
       totalScore, tier: null, scoreBreakdown,
       buyingPower: estimateBuyingPower(withChain), estimatedCustomerValue: estimateCustomerValue(withChain),
       whyQualified: null, recommendedCallAngle: null, chainRiskLevel: hard.chainRiskLevel,
+      assignmentEligibility: ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE,
     }
   }
 
@@ -351,5 +375,6 @@ export function scoreCandidate(candidate) {
     whyQualified: buildWhyQualified(withChain),
     recommendedCallAngle: buildCallAngle(withChain),
     chainRiskLevel: hard.chainRiskLevel,
+    assignmentEligibility: computeAssignmentEligibility(withChain),
   }
 }

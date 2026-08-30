@@ -59,6 +59,57 @@ export const WEBSITE_ERROR_AVAILABILITY = Object.freeze(['unavailable', 'timed_o
 // EXISTING computeWebsiteOpportunity engine) is WEAK/OUTDATED; at/above it, DECENT.
 export const DECENT_WEBSITE_MIN_OPPORTUNITY_SCORE = 55
 
+// ---- Broken-website verification (this campaign locks caller-list eligibility to
+// NO WEBSITE and VERIFIED-broken only — see leadListWebsiteStatus.js) ---------------
+// A single failed crawl attempt is NEVER enough to call a site broken. States:
+//   NOT_APPLICABLE — the site isn't classified BROKEN at all (no website / loads fine)
+//   PENDING        — mid-verification (only a transient in-run state)
+//   VERIFIED       — repeated, customer-facing failure evidence with no automation-
+//                    block signal on any attempt
+//   UNVERIFIED     — ambiguous (automation-block suspected, or attempts disagreed, or
+//                    the run's verification budget ran out) — MANUAL_REVIEW, never assigned
+export const BROKEN_VERIFICATION = Object.freeze({
+  NOT_APPLICABLE: 'NOT_APPLICABLE', PENDING: 'PENDING', VERIFIED: 'VERIFIED', UNVERIFIED: 'UNVERIFIED',
+})
+// A single-domain-parse failure is deterministic (retrying the identical malformed URL
+// can never succeed) and involves no live request at all, so it verifies broken on the
+// first attempt with no automation-block risk.
+export const SELF_VERIFYING_AVAILABILITY = Object.freeze(['invalid_url'])
+// Availability outcomes that are genuine (non-automation-related) evidence of a broken
+// site once CONFIRMED by a second independent attempt.
+export const BROKEN_CANDIDATE_AVAILABILITY = Object.freeze(['unavailable', 'timed_out'])
+// HTTP status codes strongly associated with automation-blocking (Cloudflare/bot
+// challenges, rate limiting) rather than a genuinely broken site. A match on EITHER
+// verification attempt permanently rules out VERIFIED — this never becomes broken by
+// automated means, regardless of how many times it repeats.
+export const AUTOMATION_BLOCK_HTTP_STATUSES = Object.freeze([403, 429, 503, 999])
+// siteAvailabilityStatus values that are inherently an automation/robots-style block
+// (the crawler's own SSRF/robots guard), never customer-facing evidence.
+export const AUTOMATION_BLOCK_AVAILABILITY = Object.freeze(['blocked'])
+// Verification requires this many independent audit attempts to agree before a real-
+// domain candidate can become VERIFIED broken (never on a single attempt).
+export const BROKEN_VERIFICATION_MIN_ATTEMPTS = 2
+export const BROKEN_VERIFICATION_RETRY_DELAY_MS = 2500
+// Content-based "functionally blank / placeholder / under construction" signal — reuses
+// the EXISTING detectGenericTemplate() detector (src/utils/websiteOpportunity.js) on a
+// SUCCESSFULLY loaded page. A page this generic/empty is effectively unusable to a
+// customer even though it technically returned 200, so it also verifies broken —
+// directly from the successful evidence, no retry needed (there is no transient
+// network condition to reconcile).
+export const BLANK_TEMPLATE_MIN_SIGNALS = 3 // detectGenericTemplate() "high" risk
+export const BLANK_TEMPLATE_MAX_PAGES_LOADED = 1
+
+// ---- Assignment eligibility (this campaign — orthogonal to qualification quality) --
+// A lead can be a genuinely QUALIFIED, well-scored business and still be excluded from
+// THIS campaign's caller lists because its website status isn't one of the two locked
+// conditions. Kept separate from qualificationStatus so a good SOCIAL-ONLY/WEAK/DECENT
+// business is never silently discarded — it just isn't part of this outreach round.
+export const ASSIGNMENT_ELIGIBILITY = Object.freeze({
+  ELIGIBLE: 'ELIGIBLE', NOT_ELIGIBLE: 'NOT_ELIGIBLE', MANUAL_REVIEW: 'MANUAL_REVIEW',
+})
+// The ONLY website statuses this campaign may assign — locked, not a per-run choice.
+export const CAMPAIGN_ELIGIBLE_WEBSITE_STATUSES = Object.freeze([WEBSITE_STATUS.NONE, WEBSITE_STATUS.BROKEN])
+
 // ---- Scoring weights (100 points total) -----------------------------------------
 // Every category is independently capped at its weight; the sum is the final score.
 // Keep the weights summing to 100 — a unit test enforces this.
@@ -170,6 +221,10 @@ export const UNKNOWN_BUYING_POWER_MIN_SCORE = ASSIGNMENT_MINIMUM_SCORE
 
 // ---- Buying-power qualitative bands (never an invented dollar figure) -----------
 export const BUYING_POWER = Object.freeze({ HIGH: 'High', MODERATE_HIGH: 'Moderate-High', MODERATE: 'Moderate', UNKNOWN: 'Unknown' })
+// Ordinal rank for sorting (lower = stronger) — used as a campaign tie-break key.
+export const BUYING_POWER_RANK = Object.freeze({
+  [BUYING_POWER.HIGH]: 0, [BUYING_POWER.MODERATE_HIGH]: 1, [BUYING_POWER.MODERATE]: 2, [BUYING_POWER.UNKNOWN]: 3,
+})
 
 // ---- Estimated customer value (broad, service-type based; never company-specific)
 export const CUSTOMER_VALUE_BAND = Object.freeze({
@@ -207,6 +262,13 @@ export const GENERATION_DEFAULTS = Object.freeze({
   maxWebsiteVerificationsPerRun: 1600,
   websiteVerificationBatchSize: 20,
   websiteVerificationPaceMs: 6200,
+  // Broken-website confirmation: a SECOND, independent /api/bulk-audit pass, but only
+  // for the (typically much smaller) subset whose first attempt looked broken-ish and
+  // wasn't automation-block-suspected — never spent on sites that already succeeded,
+  // are obviously blocked, or were skipped for budget reasons on the first pass.
+  maxBrokenRetriesPerRun: 800,
+  brokenRetryBatchSize: 20,
+  brokenRetryPaceMs: 6200,
   // Optional recent-review-activity enrichment via the EXISTING /api/profile-details
   // (billable Google Place Details; OFF by default, user opts in per run).
   maxReviewEnrichmentsPerRun: 150,

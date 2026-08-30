@@ -10,6 +10,7 @@ import { leadsMatch } from '../utils/leadIdentity.js'
 import {
   LEAD_TIERS, ASSIGNMENT_PEOPLE, DEFAULT_CALL_STATUS, CALL_STATUSES,
   QUALIFICATION_STATUS, DISREGARD_REASON,
+  WEBSITE_STATUS, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY, CAMPAIGN_ELIGIBLE_WEBSITE_STATUSES,
 } from '../config/leadListQualification.js'
 
 const MASTER_KEY = 'auvric_lead_list_master'
@@ -41,10 +42,26 @@ function writeArray(key, list, setMemory) {
 export const LEAD_OWNER = Object.freeze({ UNASSIGNED: 'Unassigned', ...Object.fromEntries(ASSIGNMENT_PEOPLE.map(p => [p.toUpperCase(), p.charAt(0).toUpperCase() + p.slice(1)])) })
 export const LEAD_OWNER_VALUES = Object.freeze(['Unassigned', ...ASSIGNMENT_PEOPLE.map(p => p.charAt(0).toUpperCase() + p.slice(1))])
 
+// A legacy record persisted before this campaign's eligibility fields existed never
+// recorded brokenVerification, so it is treated as NOT_APPLICABLE (non-broken statuses)
+// or UNVERIFIED (broken, unknown verification) — never silently upgraded to VERIFIED.
+function deriveAssignmentEligibility(websiteStatus, brokenVerification) {
+  if (!CAMPAIGN_ELIGIBLE_WEBSITE_STATUSES.includes(websiteStatus)) return ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE
+  if (websiteStatus === WEBSITE_STATUS.BROKEN) {
+    return brokenVerification === BROKEN_VERIFICATION.VERIFIED
+      ? ASSIGNMENT_ELIGIBILITY.ELIGIBLE
+      : ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW
+  }
+  return ASSIGNMENT_ELIGIBILITY.ELIGIBLE // WEBSITE_STATUS.NONE
+}
+
 // Idempotent migration — every read passes through this so old/partial records get
 // safe defaults without erasing anything already present.
 function migrateMasterLead(rec) {
   const r = rec ?? {}
+  const brokenVerification = Object.values(BROKEN_VERIFICATION).includes(r.brokenVerification)
+    ? r.brokenVerification
+    : (r.websiteStatus === WEBSITE_STATUS.BROKEN ? BROKEN_VERIFICATION.UNVERIFIED : BROKEN_VERIFICATION.NOT_APPLICABLE)
   return {
     id: r.id,
     providerId: r.providerId ?? r.googlePlaceId ?? null,
@@ -60,6 +77,15 @@ function migrateMasterLead(rec) {
     websiteUrl: r.websiteUrl ?? null,
     websiteStatus: r.websiteStatus ?? null,
     websiteStatusVerified: Boolean(r.websiteStatusVerified),
+    // Broken-website verification state (this campaign's locked eligibility — §
+    // NO WEBSITE / VERIFIED BROKEN only). Never inferred as VERIFIED on migration.
+    brokenVerification,
+    websiteOpportunityScore: typeof r.websiteOpportunityScore === 'number' ? r.websiteOpportunityScore : null,
+    websiteWeaknessEvidence: r.websiteWeaknessEvidence ?? null,
+    // ELIGIBLE / NOT_ELIGIBLE / MANUAL_REVIEW — orthogonal to qualificationStatus.
+    // Recomputed on every read from websiteStatus+brokenVerification so it can never
+    // silently drift from the fields it's derived from.
+    assignmentEligibility: deriveAssignmentEligibility(r.websiteStatus ?? null, brokenVerification),
     googleMapsUrl: r.googleMapsUrl ?? null,
     // Processed-candidate status (§1) — QUALIFIED or DISREGARDED. A legacy record from
     // before this field existed (migration v1) is treated as QUALIFIED since only
@@ -165,6 +191,9 @@ export function addProcessedCandidates(scoredCandidates) {
       websiteUrl: c.websiteUrl,
       websiteStatus: c.websiteStatus,
       websiteStatusVerified: c.websiteStatusVerified,
+      brokenVerification: c.brokenVerification,
+      websiteOpportunityScore: c.websiteOpportunityScore,
+      websiteWeaknessEvidence: c.websiteWeaknessEvidence,
       googleMapsUrl: c.googleMapsUrl,
       qualificationStatus: c.qualificationStatus,
       disregardReasonCodes: c.disregardReasonCodes ?? [],

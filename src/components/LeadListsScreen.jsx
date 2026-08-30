@@ -12,6 +12,7 @@ import { downloadLeadListCSV, downloadLeadListXLSX, EXPORT_FILENAMES } from '../
 import { resolveIndustrySelection } from '../config/leadListIndustries'
 import {
   ASSIGNMENT_QUOTAS, ASSIGNMENT_PEOPLE, ASSIGNMENT_ELIGIBLE_TIERS, QUALIFICATION_STATUS,
+  ASSIGNMENT_ELIGIBILITY,
 } from '../config/leadListQualification'
 import styles from './LeadListsScreen.module.css'
 
@@ -40,6 +41,9 @@ export default function LeadListsScreen({ onBack }) {
   // leads AT OR ABOVE the configured assignment tier (this run's new ones plus any
   // left over from a prior run) — §16/§17: every generation run tries to keep
   // Jaco/Marc/Cameron topped up, B-tier stays reserve, ownership never moves once set.
+  // This campaign additionally locks caller-list eligibility to NO WEBSITE / VERIFIED
+  // BROKEN WEBSITE ONLY — a well-scored SOCIAL-ONLY/WEAK/DECENT lead, or an UNVERIFIED
+  // broken site (MANUAL_REVIEW), is never auto-assigned regardless of tier or score.
   function runAutoAssignment(runId) {
     const current = getMasterLeads()
     const alreadyAssigned = ASSIGNMENT_PEOPLE.reduce((acc, p) => {
@@ -50,7 +54,8 @@ export default function LeadListsScreen({ onBack }) {
     const eligible = current.filter(l =>
       l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED &&
       l.leadOwner === 'Unassigned' &&
-      ASSIGNMENT_ELIGIBLE_TIERS.includes(l.leadTier)
+      ASSIGNMENT_ELIGIBLE_TIERS.includes(l.leadTier) &&
+      l.assignmentEligibility === ASSIGNMENT_ELIGIBILITY.ELIGIBLE
     )
     const { assignments, unassigned, counts } = assignLeadsToOwners(eligible, { quotas: ASSIGNMENT_QUOTAS, alreadyAssigned })
     if (assignments.length > 0) assignLeadOwners(assignments)
@@ -106,9 +111,12 @@ export default function LeadListsScreen({ onBack }) {
     const qualified = masterLeads.filter(l => l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED)
     const disregarded = masterLeads.length - qualified.length
     const reserve = qualified.filter(l => !ASSIGNMENT_ELIGIBLE_TIERS.includes(l.leadTier) && l.leadOwner === 'Unassigned').length
+    // Qualified but held for manual confirmation (broken website, not yet VERIFIED) —
+    // never auto-assigned, never disregarded; a human decides.
+    const manualReview = qualified.filter(l => l.assignmentEligibility === ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW && l.leadOwner === 'Unassigned').length
     return {
       all: masterLeads.length, qualified: qualified.length, disregarded,
-      unassigned: qualified.filter(l => l.leadOwner === 'Unassigned').length, reserve,
+      unassigned: qualified.filter(l => l.leadOwner === 'Unassigned').length, reserve, manualReview,
       jaco: byOwner.Jaco.length, marc: byOwner.Marc.length, cameron: byOwner.Cameron.length,
     }
   }, [masterLeads, byOwner])
@@ -120,7 +128,7 @@ export default function LeadListsScreen({ onBack }) {
         <div className={styles.heading}>
           <h2 className={styles.title}>Lead Lists</h2>
           <span className={styles.count}>
-            {counts.qualified} qualified ({counts.reserve} B-tier reserve) · {counts.disregarded} disregarded · {counts.unassigned} unassigned
+            {counts.qualified} qualified ({counts.reserve} B-tier reserve, {counts.manualReview} manual review) · {counts.disregarded} disregarded · {counts.unassigned} unassigned
           </span>
         </div>
       </div>
@@ -194,7 +202,11 @@ export default function LeadListsScreen({ onBack }) {
                     <th>Date</th><th>Industries</th><th>Locations</th><th>Found</th><th>Known</th>
                     <th>Duplicates</th><th>Hard Rejected</th><th>Scored</th>
                     <th>S</th><th>A+</th><th>A</th><th>B</th><th>Disregarded</th>
+                    <th>No Website</th><th>Verified Broken</th><th>Unverified Broken</th>
+                    <th>Social-Only</th><th>Weak</th><th>Decent</th>
+                    <th>Eligible</th><th>Manual Review</th>
                     <th>Jaco</th><th>Marc</th><th>Cameron</th><th>Unassigned</th>
+                    <th>Not Assigned Because</th>
                     <th>Top Disregard Reasons</th><th>Stopped</th>
                   </tr>
                 </thead>
@@ -203,6 +215,9 @@ export default function LeadListsScreen({ onBack }) {
                     const topReasons = Object.entries(r.disregardBreakdown ?? {})
                       .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 3)
                       .map(([code, n]) => `${n} ${code.replace(/_/g, ' ')}`).join(', ')
+                    const notAssigned = Object.entries(r.notAssignedBecause ?? {})
+                      .filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1])
+                      .map(([code, n]) => `${n} ${code.replace(/([A-Z])/g, ' $1').toLowerCase()}`).join(', ')
                     return (
                       <tr key={r.id}>
                         <td>{new Date(r.createdAt).toLocaleString()}</td>
@@ -218,10 +233,19 @@ export default function LeadListsScreen({ onBack }) {
                         <td>{r.tierBreakdown?.A ?? 0}</td>
                         <td>{r.tierBreakdown?.B ?? 0}</td>
                         <td>{r.disregarded ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.noWebsite ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.brokenVerified ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.brokenUnverified ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.socialOnly ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.weak ?? 0}</td>
+                        <td>{r.websiteStatusBreakdown?.decent ?? 0}</td>
+                        <td>{r.qualifiedForAssignment ?? 0}</td>
+                        <td>{r.manualReview ?? 0}</td>
                         <td>{r.assignedJaco ?? 0}</td>
                         <td>{r.assignedMarc ?? 0}</td>
                         <td>{r.assignedCameron ?? 0}</td>
                         <td>{r.unassignedQualified ?? 0}</td>
+                        <td className={styles.reasonsCell} title={notAssigned}>{notAssigned || '—'}</td>
                         <td className={styles.reasonsCell} title={topReasons}>{topReasons || '—'}</td>
                         <td>{r.stoppedReason?.replace(/_/g, ' ')}</td>
                       </tr>
