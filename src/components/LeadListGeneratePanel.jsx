@@ -143,9 +143,13 @@ export default function LeadListGeneratePanel({ onStart, onStop, isRunning, prog
           )}
           <p className={styles.summarySub}>
             Industries searched: {lastSummary.industriesSearched ?? 0} of {lastSummary.industriesRequested ?? 0} selected.
+            Locations searched: {lastSummary.locationsSearched ?? 0} of {lastSummary.locationsRequested ?? 0} selected.
           </p>
           {lastSummary.diversityWarning && (
             <p className={styles.warn}>{lastSummary.diversityWarning}</p>
+          )}
+          {lastSummary.geoDiversityWarning && (
+            <p className={styles.warn}>{lastSummary.geoDiversityWarning}</p>
           )}
         </div>
       )}

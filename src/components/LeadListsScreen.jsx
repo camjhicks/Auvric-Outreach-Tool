@@ -60,19 +60,26 @@ export default function LeadListsScreen({ onBack }) {
     const { assignments, unassigned, counts } = assignLeadsToOwners(eligible, { quotas: ASSIGNMENT_QUOTAS, alreadyAssigned })
     if (assignments.length > 0) assignLeadOwners(assignments)
     if (runId) {
-      // Fold "assigned per industry" into this run's existing industryBreakdown (§
-      // discovery-diversity diagnostics) — a shallow merge would otherwise clobber it.
+      // Fold "assigned per industry/location" into this run's existing breakdowns (§
+      // discovery-diversity diagnostics) — a shallow merge would otherwise clobber them.
       const eligibleById = new Map(eligible.map(l => [l.id, l]))
       const run = getRuns().find(r => r.id === runId)
       const industryBreakdown = { ...(run?.industryBreakdown ?? {}) }
+      const locationBreakdown = { ...(run?.locationBreakdown ?? {}) }
       for (const a of assignments) {
-        const industryId = eligibleById.get(a.id)?.industryId
-        if (!industryId || !industryBreakdown[industryId]) continue
-        industryBreakdown[industryId] = { ...industryBreakdown[industryId], assigned: (industryBreakdown[industryId].assigned ?? 0) + 1 }
+        const lead = eligibleById.get(a.id)
+        const industryId = lead?.industryId
+        if (industryId && industryBreakdown[industryId]) {
+          industryBreakdown[industryId] = { ...industryBreakdown[industryId], assigned: (industryBreakdown[industryId].assigned ?? 0) + 1 }
+        }
+        const location = lead?.searchLocation
+        if (location && locationBreakdown[location]) {
+          locationBreakdown[location] = { ...locationBreakdown[location], assigned: (locationBreakdown[location].assigned ?? 0) + 1 }
+        }
       }
       updateRunSummary(runId, {
         assignedJaco: counts.Jaco ?? 0, assignedMarc: counts.Marc ?? 0, assignedCameron: counts.Cameron ?? 0,
-        unassignedQualified: unassigned.length, industryBreakdown,
+        unassignedQualified: unassigned.length, industryBreakdown, locationBreakdown,
       })
     }
     refresh()
@@ -209,7 +216,8 @@ export default function LeadListsScreen({ onBack }) {
               <table className={styles.historyTable}>
                 <thead>
                   <tr>
-                    <th>Date</th><th>Industries</th><th>Industries Searched</th><th>Locations</th><th>Found</th><th>Known</th>
+                    <th>Date</th><th>Industries</th><th>Industries Searched</th>
+                    <th>Locations</th><th>Locations Searched</th><th>Found</th><th>Known</th>
                     <th>Duplicates</th><th>Hard Rejected</th><th>Scored</th>
                     <th>S</th><th>A+</th><th>A</th><th>B</th><th>Disregarded</th>
                     <th>No Website</th><th>Verified Broken</th><th>Unverified Broken</th>
@@ -218,6 +226,8 @@ export default function LeadListsScreen({ onBack }) {
                     <th>Jaco</th><th>Marc</th><th>Cameron</th><th>Unassigned</th>
                     <th>Top Industries (raw / qualified / assigned)</th>
                     <th>Diversity Warning</th>
+                    <th>Top Locations (raw / qualified / assigned)</th>
+                    <th>Geographic Concentration</th>
                     <th>Not Assigned Because</th>
                     <th>Top Disregard Reasons</th><th>Stopped</th>
                   </tr>
@@ -233,12 +243,19 @@ export default function LeadListsScreen({ onBack }) {
                     const topIndustries = Object.values(r.industryBreakdown ?? {})
                       .filter(ib => ib.raw > 0).sort((a, b) => b.raw - a.raw).slice(0, 5)
                       .map(ib => `${ib.label}: ${ib.raw} / ${ib.qualified} / ${ib.assigned}`).join(', ')
+                    const topLocations = Object.entries(r.locationBreakdown ?? {})
+                      .filter(([, lb]) => lb.raw > 0).sort((a, b) => b[1].raw - a[1].raw).slice(0, 5)
+                      .map(([loc, lb]) => `${loc}: ${lb.raw} / ${lb.qualified} / ${lb.assigned}`).join(', ')
+                    const geoWarningLabel = r.geoDiversityWarning
+                      ? `${r.geoConcentrationType === 'DISCOVERY_GAP' ? 'Discovery gap' : 'Market outcome'}: ${r.geoDiversityWarning}`
+                      : '—'
                     return (
                       <tr key={r.id}>
                         <td>{new Date(r.createdAt).toLocaleString()}</td>
                         <td>{(r.industries ?? []).length}</td>
                         <td>{r.industriesSearched ?? '—'} / {r.industriesRequested ?? (r.industries ?? []).length}</td>
                         <td>{(r.locations ?? []).join(', ')}</td>
+                        <td>{r.locationsSearched ?? '—'} / {r.locationsRequested ?? (r.locations ?? []).length}</td>
                         <td>{r.candidatesFound}</td>
                         <td>{r.previouslyKnown ?? 0}</td>
                         <td>{r.duplicatesRemoved}</td>
@@ -263,6 +280,8 @@ export default function LeadListsScreen({ onBack }) {
                         <td>{r.unassignedQualified ?? 0}</td>
                         <td className={styles.reasonsCell} title={topIndustries}>{topIndustries || '—'}</td>
                         <td className={styles.reasonsCell}>{r.diversityWarning || '—'}</td>
+                        <td className={styles.reasonsCell} title={topLocations}>{topLocations || '—'}</td>
+                        <td className={styles.reasonsCell} title={r.geoDiversityWarning ?? ''}>{geoWarningLabel}</td>
                         <td className={styles.reasonsCell} title={notAssigned}>{notAssigned || '—'}</td>
                         <td className={styles.reasonsCell} title={topReasons}>{topReasons || '—'}</td>
                         <td>{r.stoppedReason?.replace(/_/g, ' ')}</td>

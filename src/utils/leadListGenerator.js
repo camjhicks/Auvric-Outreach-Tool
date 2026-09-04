@@ -78,15 +78,31 @@ export async function runLeadListGeneration(opts) {
   const candidatePoolTarget = Math.ceil(targetQualifiedCount * cfg.candidatePoolMultiplier)
   const industryById = new Map(industries.map(i => [i.id, i]))
 
-  // Round-robin combo order: LOCATION-outer, INDUSTRY-inner. Every industry gets a
-  // discovery attempt at the current location before moving to the next location —
-  // industry A+loc1, industry B+loc1, ... then loc2, loc3, ... — so no single industry
-  // (e.g. the first one in the catalog) can exhaust the whole candidate pool target
-  // before any other selected industry is ever searched. Because every industry shares
-  // the same `locations` list, this ordering IS the round-robin (each "round" of
-  // `industries.length` combos visits every selected industry exactly once).
+  // Interleaved combo order across BOTH industries and locations. A plain
+  // location-outer/industry-inner nesting (an earlier version of this fix) still lets
+  // one large FIRST location alone supply the whole candidate pool target during its
+  // own full industry sweep, starving every other location — the geographic twin of the
+  // original HVAC-only bug. Instead, generate the full industry×location grid in
+  // L-sized (locations.length) BLOCKS: round `r`'s combo for location index `locIdx`
+  // uses industry index `(r*L + locIdx) % industries.length` — i.e. round 0 hands out
+  // industries[0..L-1] one per location, round 1 hands out industries[L..2L-1], etc.
+  // Every ROUND touches every selected location exactly once (full LOCATION coverage
+  // after a single round), while full INDUSTRY coverage is reached after
+  // ceil(industries.length / L) rounds — L NEW industries per round, not one — so
+  // neither dimension needs anywhere near the full I×L grid to reach complete coverage
+  // of both (a naive "shift by 1 per round" diagonal only adds ONE new industry per
+  // round regardless of L, which needs ~industries.length rounds and can blow the
+  // discoveryRequests cap before covering the catalog — this block-cycling scheme
+  // instead needs only ceil(industries.length / L) rounds, independent of how that
+  // divides). No industry and no location can be starved by another being searched
+  // first, and the two coverage goals are pursued together rather than sequentially.
   const combos = []
-  for (const location of locations) for (const industry of industries) combos.push({ industry, location })
+  for (let round = 0; round < industries.length; round++) {
+    for (let locIdx = 0; locIdx < locations.length; locIdx++) {
+      const industry = industries[(round * locations.length + locIdx) % industries.length]
+      combos.push({ industry, location: locations[locIdx] })
+    }
+  }
 
   const counters = {
     candidatesFound: 0, duplicatesRemoved: 0, previouslyKnown: 0, hardRejected: 0,
@@ -95,13 +111,17 @@ export async function runLeadListGeneration(opts) {
   }
   let stoppedReason = null
   const pool = [] // cleaned, not-yet-known candidates gathered this run
-  // Every industry that has had at least one discovery attempt this run — the pool-size
-  // stop condition is gated on this reaching full coverage of the selected industries,
-  // so raw candidate VOLUME can never end discovery before every selected industry has
-  // been given a chance (§ industry-coverage-aware stop condition). Bounded by the
-  // existing discoveryRequests cap, so this can never blow the API-cost budget.
+  // Every industry/location that has had at least one discovery attempt this run — the
+  // pool-size stop condition is gated on BOTH reaching full coverage, so raw candidate
+  // VOLUME can never end discovery before every selected industry AND every selected
+  // location has been given a chance (§ coverage-aware stop condition). Bounded by the
+  // existing discoveryRequests cap, so this can never blow the API-cost budget — if the
+  // cap is hit first, whatever coverage was reached is reported honestly in diagnostics
+  // rather than silently pretended complete.
   const industriesAttempted = new Set()
+  const locationsAttempted = new Set()
   const rawCandidatesByIndustry = new Map(industries.map(i => [i.id, 0]))
+  const rawCandidatesByLocation = new Map(locations.map(l => [l, 0]))
 
   // ---- Stage 1: Collecting candidates ---------------------------------------------
   reportProgress(onProgress, { stage: 'Collecting candidates', ...counters })
@@ -109,8 +129,8 @@ export async function runLeadListGeneration(opts) {
   for (const { industry, location } of combos) {
     if (control.cancelled) { stoppedReason = 'cancelled'; break }
     if (counters.discoveryRequests >= cfg.maxDiscoveryRequestsPerRun) { stoppedReason = 'request_cap_reached'; break }
-    const fullIndustryCoverage = industriesAttempted.size >= industries.length
-    if (pool.length >= candidatePoolTarget && fullIndustryCoverage) { stoppedReason = 'candidate_pool_target_met'; break }
+    const fullCoverage = industriesAttempted.size >= industries.length && locationsAttempted.size >= locations.length
+    if (pool.length >= candidatePoolTarget && fullCoverage) { stoppedReason = 'candidate_pool_target_met'; break }
 
     let known
     try {
@@ -127,11 +147,13 @@ export async function runLeadListGeneration(opts) {
       reportProgress(onProgress, { stage: 'Collecting candidates', warning: err.message, ...counters })
       counters.discoveryRequests++
       industriesAttempted.add(industry.id)
+      locationsAttempted.add(location)
       await sleepFn(cfg.discoveryPaceMs)
       continue
     }
     counters.discoveryRequests++
     industriesAttempted.add(industry.id)
+    locationsAttempted.add(location)
 
     for (const b of result.businesses ?? []) {
       const candidate = {
@@ -148,16 +170,18 @@ export async function runLeadListGeneration(opts) {
       pool.push(candidate)
       counters.candidatesFound++
       rawCandidatesByIndustry.set(industry.id, (rawCandidatesByIndustry.get(industry.id) ?? 0) + 1)
+      rawCandidatesByLocation.set(location, (rawCandidatesByLocation.get(location) ?? 0) + 1)
       // Caps how many candidates a single combo can still add once the pool is already
-      // past target — but never skips the remaining combos needed for industry coverage
-      // (that's controlled solely by the top-of-loop gate above), so a "coverage-only"
-      // combo run after the target is met still contributes at least one real candidate.
+      // past target — but never skips the remaining combos needed for coverage (that's
+      // controlled solely by the top-of-loop gate above), so a "coverage-only" combo run
+      // after the target is met still contributes at least one real candidate.
       if (pool.length >= candidatePoolTarget) break
     }
 
     reportProgress(onProgress, {
       stage: 'Collecting candidates', combo: `${industry.label} · ${location}`,
       industriesSearched: industriesAttempted.size, industriesRequested: industries.length,
+      locationsSearched: locationsAttempted.size, locationsRequested: locations.length,
       ...counters,
     })
     await sleepFn(cfg.discoveryPaceMs)
@@ -402,6 +426,25 @@ export async function runLeadListGeneration(opts) {
     else industryBreakdown[r.industryId].disregarded++
   }
 
+  // Per-location diagnostics — the geographic twin of industryBreakdown, so it's
+  // immediately obvious whether only one city/state was actually searched.
+  const locationBreakdown = {}
+  for (const location of locations) {
+    locationBreakdown[location] = {
+      searched: locationsAttempted.has(location),
+      raw: rawCandidatesByLocation.get(location) ?? 0,
+      qualified: 0, disregarded: 0, assigned: 0,
+    }
+  }
+  for (const r of hardRejectedRecords) {
+    if (r.searchLocation && locationBreakdown[r.searchLocation]) locationBreakdown[r.searchLocation].disregarded++
+  }
+  for (const r of scoredRecords) {
+    if (!r.searchLocation || !locationBreakdown[r.searchLocation]) continue
+    if (r.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED) locationBreakdown[r.searchLocation].qualified++
+    else locationBreakdown[r.searchLocation].disregarded++
+  }
+
   // Diversity warning (diagnostic only — never discards leads to "fix" concentration):
   // more than 5 industries selected, but 90%+ of this run's qualified leads came from
   // one industry, is a signal the discovery sweep may not have covered the catalog well.
@@ -418,6 +461,29 @@ export async function runLeadListGeneration(opts) {
     }
   }
 
+  // Geographic concentration warning — same diagnostic-only philosophy, but explicitly
+  // distinguishes DISCOVERY CONCENTRATION (some selected locations never got searched —
+  // an orchestration/coverage bug) from QUALIFICATION CONCENTRATION (every selected
+  // location was searched, but one legitimately produced most of the qualified leads —
+  // a plausibly valid market outcome). Never discards or downgrades strong leads.
+  let geoDiversityWarning = null
+  let geoConcentrationType = null
+  if (locations.length > 2 && qualifiedThisRunAll.length > 0) {
+    const counts = new Map()
+    for (const r of qualifiedThisRunAll) counts.set(r.searchLocation, (counts.get(r.searchLocation) ?? 0) + 1)
+    let topLocation = null, topCount = 0
+    for (const [loc, n] of counts) if (n > topCount) { topLocation = loc; topCount = n }
+    const pct = topCount / qualifiedThisRunAll.length
+    if (pct >= 0.9) {
+      const fullLocationCoverage = locationsAttempted.size >= locations.length
+      geoConcentrationType = fullLocationCoverage ? 'QUALIFICATION_OUTCOME' : 'DISCOVERY_GAP'
+      const base = `Geographic concentration detected: ${Math.round(pct * 100)}% of qualified leads came from ${topLocation}. Review discovery coverage.`
+      geoDiversityWarning = fullLocationCoverage
+        ? `${base} (All ${locations.length} selected locations were searched — this may reflect a genuine market outcome, not a coverage gap.)`
+        : `${base} (Only ${locationsAttempted.size} of ${locations.length} selected locations were actually searched — this looks like a discovery coverage gap, not a confirmed market outcome.)`
+    }
+  }
+
   const summary = {
     industries: industries.map(i => i.id), locations: locations.slice(),
     targetQualifiedCount, ...counters, savedCount, skippedCount, stoppedReason,
@@ -426,6 +492,8 @@ export async function runLeadListGeneration(opts) {
     qualifiedForAssignment: eligibleForAssignment, manualReview,
     industriesRequested: industries.length, industriesSearched: industriesAttempted.size,
     industryBreakdown, diversityWarning,
+    locationsRequested: locations.length, locationsSearched: locationsAttempted.size,
+    locationBreakdown, geoDiversityWarning, geoConcentrationType,
     // Filled in by the caller after auto-assignment runs (a separate step — see
     // LeadListsScreen.runAutoAssignment) via updateRunSummary(runId, {...}).
     assignedJaco: 0, assignedMarc: 0, assignedCameron: 0, unassignedQualified: 0,
