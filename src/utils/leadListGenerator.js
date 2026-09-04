@@ -78,8 +78,15 @@ export async function runLeadListGeneration(opts) {
   const candidatePoolTarget = Math.ceil(targetQualifiedCount * cfg.candidatePoolMultiplier)
   const industryById = new Map(industries.map(i => [i.id, i]))
 
+  // Round-robin combo order: LOCATION-outer, INDUSTRY-inner. Every industry gets a
+  // discovery attempt at the current location before moving to the next location —
+  // industry A+loc1, industry B+loc1, ... then loc2, loc3, ... — so no single industry
+  // (e.g. the first one in the catalog) can exhaust the whole candidate pool target
+  // before any other selected industry is ever searched. Because every industry shares
+  // the same `locations` list, this ordering IS the round-robin (each "round" of
+  // `industries.length` combos visits every selected industry exactly once).
   const combos = []
-  for (const industry of industries) for (const location of locations) combos.push({ industry, location })
+  for (const location of locations) for (const industry of industries) combos.push({ industry, location })
 
   const counters = {
     candidatesFound: 0, duplicatesRemoved: 0, previouslyKnown: 0, hardRejected: 0,
@@ -88,6 +95,13 @@ export async function runLeadListGeneration(opts) {
   }
   let stoppedReason = null
   const pool = [] // cleaned, not-yet-known candidates gathered this run
+  // Every industry that has had at least one discovery attempt this run — the pool-size
+  // stop condition is gated on this reaching full coverage of the selected industries,
+  // so raw candidate VOLUME can never end discovery before every selected industry has
+  // been given a chance (§ industry-coverage-aware stop condition). Bounded by the
+  // existing discoveryRequests cap, so this can never blow the API-cost budget.
+  const industriesAttempted = new Set()
+  const rawCandidatesByIndustry = new Map(industries.map(i => [i.id, 0]))
 
   // ---- Stage 1: Collecting candidates ---------------------------------------------
   reportProgress(onProgress, { stage: 'Collecting candidates', ...counters })
@@ -95,7 +109,8 @@ export async function runLeadListGeneration(opts) {
   for (const { industry, location } of combos) {
     if (control.cancelled) { stoppedReason = 'cancelled'; break }
     if (counters.discoveryRequests >= cfg.maxDiscoveryRequestsPerRun) { stoppedReason = 'request_cap_reached'; break }
-    if (pool.length >= candidatePoolTarget) { stoppedReason = 'candidate_pool_target_met'; break }
+    const fullIndustryCoverage = industriesAttempted.size >= industries.length
+    if (pool.length >= candidatePoolTarget && fullIndustryCoverage) { stoppedReason = 'candidate_pool_target_met'; break }
 
     let known
     try {
@@ -111,10 +126,12 @@ export async function runLeadListGeneration(opts) {
       // A single failed combo never aborts the whole run — move to the next pair.
       reportProgress(onProgress, { stage: 'Collecting candidates', warning: err.message, ...counters })
       counters.discoveryRequests++
+      industriesAttempted.add(industry.id)
       await sleepFn(cfg.discoveryPaceMs)
       continue
     }
     counters.discoveryRequests++
+    industriesAttempted.add(industry.id)
 
     for (const b of result.businesses ?? []) {
       const candidate = {
@@ -130,11 +147,19 @@ export async function runLeadListGeneration(opts) {
       if (dupInPool) { counters.duplicatesRemoved++; continue }
       pool.push(candidate)
       counters.candidatesFound++
+      rawCandidatesByIndustry.set(industry.id, (rawCandidatesByIndustry.get(industry.id) ?? 0) + 1)
+      // Caps how many candidates a single combo can still add once the pool is already
+      // past target — but never skips the remaining combos needed for industry coverage
+      // (that's controlled solely by the top-of-loop gate above), so a "coverage-only"
+      // combo run after the target is met still contributes at least one real candidate.
       if (pool.length >= candidatePoolTarget) break
     }
 
-    reportProgress(onProgress, { stage: 'Collecting candidates', combo: `${industry.label} · ${location}`, ...counters })
-    if (result.discoveryMeta?.providerExhausted === false && pool.length >= candidatePoolTarget) break comboLoop
+    reportProgress(onProgress, {
+      stage: 'Collecting candidates', combo: `${industry.label} · ${location}`,
+      industriesSearched: industriesAttempted.size, industriesRequested: industries.length,
+      ...counters,
+    })
     await sleepFn(cfg.discoveryPaceMs)
   }
   // Reaching the end of the loop without hitting cancel/cap/target means every
@@ -357,12 +382,50 @@ export async function runLeadListGeneration(opts) {
     duplicate: counters.duplicatesRemoved,
   }
 
+  // Per-industry diagnostics (§ discovery-diversity fix) — makes it immediately obvious
+  // whether only one niche was actually searched. `assigned` starts at 0 and is patched
+  // by the caller after auto-assignment runs, mirroring assignedJaco/Marc/Cameron below.
+  const industryBreakdown = {}
+  for (const industry of industries) {
+    industryBreakdown[industry.id] = {
+      label: industry.label, searched: industriesAttempted.has(industry.id),
+      raw: rawCandidatesByIndustry.get(industry.id) ?? 0,
+      qualified: 0, disregarded: 0, assigned: 0,
+    }
+  }
+  for (const r of hardRejectedRecords) {
+    if (r.industryId && industryBreakdown[r.industryId]) industryBreakdown[r.industryId].disregarded++
+  }
+  for (const r of scoredRecords) {
+    if (!r.industryId || !industryBreakdown[r.industryId]) continue
+    if (r.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED) industryBreakdown[r.industryId].qualified++
+    else industryBreakdown[r.industryId].disregarded++
+  }
+
+  // Diversity warning (diagnostic only — never discards leads to "fix" concentration):
+  // more than 5 industries selected, but 90%+ of this run's qualified leads came from
+  // one industry, is a signal the discovery sweep may not have covered the catalog well.
+  let diversityWarning = null
+  if (industries.length > 5 && qualifiedThisRunAll.length > 0) {
+    const counts = new Map()
+    for (const r of qualifiedThisRunAll) counts.set(r.industryId, (counts.get(r.industryId) ?? 0) + 1)
+    let topId = null, topCount = 0
+    for (const [id, n] of counts) if (n > topCount) { topId = id; topCount = n }
+    const pct = topCount / qualifiedThisRunAll.length
+    if (pct >= 0.9) {
+      const label = industryById.get(topId)?.label ?? topId
+      diversityWarning = `Lead concentration detected: ${Math.round(pct * 100)}% of qualified results came from ${label}. Review discovery coverage.`
+    }
+  }
+
   const summary = {
     industries: industries.map(i => i.id), locations: locations.slice(),
     targetQualifiedCount, ...counters, savedCount, skippedCount, stoppedReason,
     enrichReviews: Boolean(enrichReviews),
     tierBreakdown, disregardBreakdown, websiteStatusBreakdown, notAssignedBecause,
     qualifiedForAssignment: eligibleForAssignment, manualReview,
+    industriesRequested: industries.length, industriesSearched: industriesAttempted.size,
+    industryBreakdown, diversityWarning,
     // Filled in by the caller after auto-assignment runs (a separate step — see
     // LeadListsScreen.runAutoAssignment) via updateRunSummary(runId, {...}).
     assignedJaco: 0, assignedMarc: 0, assignedCameron: 0, unassignedQualified: 0,

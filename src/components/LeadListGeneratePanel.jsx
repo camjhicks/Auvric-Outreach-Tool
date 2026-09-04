@@ -141,6 +141,12 @@ export default function LeadListGeneratePanel({ onStart, onStop, isRunning, prog
               (target was {lastSummary.targetQualifiedCount}) — standards were not lowered to fill the quota.
             </p>
           )}
+          <p className={styles.summarySub}>
+            Industries searched: {lastSummary.industriesSearched ?? 0} of {lastSummary.industriesRequested ?? 0} selected.
+          </p>
+          {lastSummary.diversityWarning && (
+            <p className={styles.warn}>{lastSummary.diversityWarning}</p>
+          )}
         </div>
       )}
     </div>
