@@ -3,6 +3,7 @@ import {
   CALL_STATUSES, LEAD_TIERS, WEBSITE_STATUS, WEBSITE_STATUS_ORDER, QUALIFICATION_STATUS,
   DISREGARD_REASON, DISREGARD_REASON_LABEL, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY,
 } from '../config/leadListQualification'
+import { BUYER_INTENT_LEVEL, PHONE_REACHABILITY_TYPE } from '../config/leadListIntent'
 import { LEAD_OWNER_VALUES } from '../services/leadListStorage'
 import { formatPhoneForDisplay } from '../utils/leadListCopyFormat'
 import { sortLeads } from '../utils/leadListSort'
@@ -16,6 +17,14 @@ const ASSIGNMENT_ELIGIBILITY_LABEL = {
   [ASSIGNMENT_ELIGIBILITY.ELIGIBLE]: 'Eligible',
   [ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE]: 'Not eligible',
   [ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW]: 'Manual review',
+}
+const BUYER_INTENT_OPTIONS = Object.values(BUYER_INTENT_LEVEL)
+const PHONE_REACHABILITY_OPTIONS = Object.values(PHONE_REACHABILITY_TYPE)
+const PHONE_REACHABILITY_LABEL = {
+  [PHONE_REACHABILITY_TYPE.DIRECT_OWNER_LIKELY]: 'Owner-likely',
+  [PHONE_REACHABILITY_TYPE.LOCAL_BUSINESS_LINE]: 'Local business line',
+  [PHONE_REACHABILITY_TYPE.GATEKEEPER_RISK]: 'Gatekeeper risk',
+  [PHONE_REACHABILITY_TYPE.CENTRALIZED_REJECT]: 'Centralized',
 }
 
 // Explicit "BROKEN WEBSITE - VERIFIED"/"- UNVERIFIED" so the table never shows a bare,
@@ -41,6 +50,8 @@ export default function LeadListTable({
   const [websiteFilter, setWebsiteFilter] = useState('all')
   const [brokenVerificationFilter, setBrokenVerificationFilter] = useState('all')
   const [eligibilityFilter, setEligibilityFilter] = useState('all')
+  const [buyerIntentFilter, setBuyerIntentFilter] = useState('all')
+  const [phoneReachabilityFilter, setPhoneReachabilityFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   // Master Leads defaults to Qualified only — Disregarded stays available for auditing
@@ -64,6 +75,8 @@ export default function LeadListTable({
       if (websiteFilter !== 'all' && l.websiteStatus !== websiteFilter) return false
       if (brokenVerificationFilter !== 'all' && (l.brokenVerification ?? BROKEN_VERIFICATION.NOT_APPLICABLE) !== brokenVerificationFilter) return false
       if (eligibilityFilter !== 'all' && l.assignmentEligibility !== eligibilityFilter) return false
+      if (buyerIntentFilter !== 'all' && l.webDesignBuyerIntentLevel !== buyerIntentFilter) return false
+      if (phoneReachabilityFilter !== 'all' && l.phoneReachabilityType !== phoneReachabilityFilter) return false
       if (statusFilter !== 'all' && l.status !== statusFilter) return false
       if (stateFilter !== 'all' && l.state !== stateFilter) return false
       if (q) {
@@ -72,7 +85,7 @@ export default function LeadListTable({
       }
       return true
     })
-  }, [leads, query, ownerFilter, tierFilter, websiteFilter, brokenVerificationFilter, eligibilityFilter, statusFilter, stateFilter, showQualificationFilter, qualificationFilter, reasonFilter])
+  }, [leads, query, ownerFilter, tierFilter, websiteFilter, brokenVerificationFilter, eligibilityFilter, buyerIntentFilter, phoneReachabilityFilter, statusFilter, stateFilter, showQualificationFilter, qualificationFilter, reasonFilter])
 
   const sorted = useMemo(() => sortLeads(filtered), [filtered])
   const visible = sorted.slice(0, RENDER_CAP)
@@ -122,6 +135,14 @@ export default function LeadListTable({
           <option value="all">Any assignment eligibility</option>
           {ASSIGNMENT_ELIGIBILITY_OPTIONS.map(v => <option key={v} value={v}>{ASSIGNMENT_ELIGIBILITY_LABEL[v] ?? v}</option>)}
         </select>
+        <select className={styles.select} value={buyerIntentFilter} onChange={e => setBuyerIntentFilter(e.target.value)}>
+          <option value="all">Any buyer intent</option>
+          {BUYER_INTENT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <select className={styles.select} value={phoneReachabilityFilter} onChange={e => setPhoneReachabilityFilter(e.target.value)}>
+          <option value="all">Any phone reachability</option>
+          {PHONE_REACHABILITY_OPTIONS.map(v => <option key={v} value={v}>{PHONE_REACHABILITY_LABEL[v] ?? v}</option>)}
+        </select>
         <select className={styles.select} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="all">Any call status</option>
           {CALL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -154,6 +175,9 @@ export default function LeadListTable({
               <th>Rating</th>
               <th>Website Status</th>
               <th>Eligibility</th>
+              <th>Buyer Intent</th>
+              <th>Readiness</th>
+              <th>Phone Reachability</th>
               <th>Score</th>
               <th>Tier</th>
               <th>Buying Power</th>
@@ -184,6 +208,9 @@ export default function LeadListTable({
                 <td>{typeof l.rating === 'number' ? `${l.rating} (${l.reviewCount ?? 0})` : '—'}</td>
                 <td>{websiteStatusLabel(l)}</td>
                 <td>{l.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED ? (ASSIGNMENT_ELIGIBILITY_LABEL[l.assignmentEligibility] ?? '—') : '—'}</td>
+                <td title={l.whyLookingForWebsite ?? ''}>{typeof l.webDesignBuyerIntentScore === 'number' ? `${l.webDesignBuyerIntentLevel} (${l.webDesignBuyerIntentScore})` : '—'}</td>
+                <td>{typeof l.businessReadinessScore === 'number' ? `${l.businessReadinessBand} (${l.businessReadinessScore})` : '—'}</td>
+                <td>{l.phoneReachabilityType ? (PHONE_REACHABILITY_LABEL[l.phoneReachabilityType] ?? l.phoneReachabilityType) : '—'}</td>
                 <td>{l.leadScore ?? '—'}</td>
                 <td>{l.leadTier ?? '—'}</td>
                 <td>{l.estimatedBuyingPower}</td>

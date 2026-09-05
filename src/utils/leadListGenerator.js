@@ -28,8 +28,10 @@ import { computeWebsiteOpportunity } from './websiteOpportunity.js'
 import { leadsMatch, normalizePhoneDigits } from './leadIdentity.js'
 import {
   GENERATION_DEFAULTS, TOTAL_ASSIGNMENT_TARGET, QUALIFICATION_STATUS, LEAD_TIERS,
-  WEBSITE_STATUS, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY,
+  WEBSITE_STATUS, BROKEN_VERIFICATION, ASSIGNMENT_ELIGIBILITY, DISREGARD_REASON,
 } from '../config/leadListQualification.js'
+import { BUYER_INTENT_LEVEL, PHONE_REACHABILITY_TYPE, READINESS_BAND } from '../config/leadListIntent.js'
+import { isTollFree } from './leadListPhoneReachability.js'
 
 const defaultSleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
@@ -335,11 +337,30 @@ export async function runLeadListGeneration(opts) {
     reportProgress(onProgress, { stage: 'Checking recent activity', ...counters })
   }
 
+  // ---- Stage 6b: Competitor website pressure (§ Buyer Intent Signal #9) — computed
+  // ENTIRELY from this run's own already-collected candidates, grouped by industry ×
+  // location — zero extra API calls. A per-segment score is attached to every survivor
+  // in that segment (cached at the segment level, not recomputed per business). Skipped
+  // for segments too small to be a trustworthy sample (see COMPETITOR_PRESSURE_MIN_SAMPLE).
+  const segments = new Map() // "industryId|location" -> { decentOrBetter, total }
+  for (const c of survivors) {
+    const key = `${c.industryId}|${c.searchLocation}`
+    const seg = segments.get(key) ?? { decentOrBetter: 0, total: 0 }
+    seg.total++
+    if (c.websiteStatus === WEBSITE_STATUS.DECENT) seg.decentOrBetter++
+    segments.set(key, seg)
+  }
+  for (const c of survivors) {
+    const seg = segments.get(`${c.industryId}|${c.searchLocation}`)
+    c.competitorWebsiteSampleSize = seg?.total ?? 0
+    c.competitorWebsitePressure = seg && seg.total > 0 ? seg.decentOrBetter / seg.total : 0
+  }
+
   // ---- Stage 7: Scoring + qualification guardrails (survivors only) --------------
   reportProgress(onProgress, { stage: 'Scoring', ...counters })
   const scoredRecords = []
   for (const c of survivors) {
-    const result = scoreCandidate(c)
+    const result = scoreCandidate(c, industryById.get(c.industryId))
     counters.scored++
     if (result.qualificationStatus === QUALIFICATION_STATUS.QUALIFIED) counters.qualified++
     else counters.disregarded++
@@ -484,6 +505,69 @@ export async function runLeadListGeneration(opts) {
     }
   }
 
+  // Discovery-failure flags (§ Buyer-Intent upgrade) — a SIMPLE, binary coverage check,
+  // distinct from the concentration warnings above: multiple industries/locations were
+  // requested but coverage never got past a single one. This should never fire given
+  // the coverage-gated stop condition above, but is reported explicitly as a safety net
+  // rather than silently presenting a starved run as healthy.
+  const industryDiscoveryFailure = industries.length > 1 && industriesAttempted.size <= 1
+  const locationDiscoveryFailure = locations.length > 1 && locationsAttempted.size <= 1
+  const discoveryFailureWarning = industryDiscoveryFailure && locationDiscoveryFailure
+    ? `Discovery failure: only ${industriesAttempted.size} of ${industries.length} selected industries and ${locationsAttempted.size} of ${locations.length} selected locations were actually searched.`
+    : industryDiscoveryFailure
+      ? `Discovery failure: ${industries.length} industries were selected, but only ${industriesAttempted.size} was actually searched.`
+      : locationDiscoveryFailure
+        ? `Discovery failure: ${locations.length} locations were selected, but only ${locationsAttempted.size} was actually searched.`
+        : null
+
+  // Web Design Buyer Intent / Phone Reachability / Business Readiness distributions —
+  // computed across every scored record (qualified + guardrail-disregarded; hard
+  // rejects never reach scoring so are excluded, matching scoreBreakdown's own scope).
+  const buyerIntentDistribution = Object.fromEntries(Object.values(BUYER_INTENT_LEVEL).map(l => [l, 0]))
+  const phoneReachabilityDistribution = Object.fromEntries(Object.values(PHONE_REACHABILITY_TYPE).map(t => [t, 0]))
+  const businessReadinessDistribution = Object.fromEntries(Object.values(READINESS_BAND).map(b => [b, 0]))
+  const intentDataSourceBreakdown = {}
+  let countPenalizedGatekeeper = 0
+  const industryIntentSum = new Map() // industryId -> { sum, n }
+  const locationIntentSum = new Map() // location -> { sum, n }
+  for (const r of scoredRecords) {
+    if (r.webDesignBuyerIntentLevel) buyerIntentDistribution[r.webDesignBuyerIntentLevel] = (buyerIntentDistribution[r.webDesignBuyerIntentLevel] ?? 0) + 1
+    if (r.phoneReachabilityType) phoneReachabilityDistribution[r.phoneReachabilityType] = (phoneReachabilityDistribution[r.phoneReachabilityType] ?? 0) + 1
+    if (r.businessReadinessBand) businessReadinessDistribution[r.businessReadinessBand] = (businessReadinessDistribution[r.businessReadinessBand] ?? 0) + 1
+    if (r.intentDataSource) intentDataSourceBreakdown[r.intentDataSource] = (intentDataSourceBreakdown[r.intentDataSource] ?? 0) + 1
+    if (r.phoneReachabilityType === PHONE_REACHABILITY_TYPE.GATEKEEPER_RISK) countPenalizedGatekeeper++
+    if (typeof r.webDesignBuyerIntentScore === 'number') {
+      if (r.industryId) {
+        const s = industryIntentSum.get(r.industryId) ?? { sum: 0, n: 0 }
+        s.sum += r.webDesignBuyerIntentScore; s.n++
+        industryIntentSum.set(r.industryId, s)
+      }
+      if (r.searchLocation) {
+        const s = locationIntentSum.get(r.searchLocation) ?? { sum: 0, n: 0 }
+        s.sum += r.webDesignBuyerIntentScore; s.n++
+        locationIntentSum.set(r.searchLocation, s)
+      }
+    }
+  }
+  // Rejected specifically for centralized-phone evidence: a hard-rejected chain/
+  // franchise record that ALSO carried a toll-free number — an honest, real tally, not
+  // a new hard-reject rule (§ CENTRALIZED PHONE HARD REJECTIONS — toll-free alone is
+  // never sufficient grounds; this counts cases where the EXISTING chain/franchise
+  // rejection already fired and a toll-free number corroborates it).
+  const countRejectedCentralizedPhone = hardRejectedRecords.filter(r =>
+    (r.disregardReasonCodes ?? []).some(c => c === DISREGARD_REASON.CORPORATE_CHAIN || c === DISREGARD_REASON.FRANCHISE_OR_CENTRALIZED_MARKETING) &&
+    isTollFree(r.phone)
+  ).length
+
+  for (const [id, s] of industryIntentSum) if (industryBreakdown[id]) industryBreakdown[id].avgBuyerIntent = Math.round(s.sum / s.n)
+  for (const [loc, s] of locationIntentSum) if (locationBreakdown[loc]) locationBreakdown[loc].avgBuyerIntent = Math.round(s.sum / s.n)
+  const topBuyerIntentIndustries = Object.entries(industryBreakdown)
+    .filter(([, ib]) => typeof ib.avgBuyerIntent === 'number').sort((a, b) => b[1].avgBuyerIntent - a[1].avgBuyerIntent)
+    .slice(0, 5).map(([id, ib]) => ({ industryId: id, label: ib.label, avgBuyerIntent: ib.avgBuyerIntent }))
+  const topBuyerIntentLocations = Object.entries(locationBreakdown)
+    .filter(([, lb]) => typeof lb.avgBuyerIntent === 'number').sort((a, b) => b[1].avgBuyerIntent - a[1].avgBuyerIntent)
+    .slice(0, 5).map(([location, lb]) => ({ location, avgBuyerIntent: lb.avgBuyerIntent }))
+
   const summary = {
     industries: industries.map(i => i.id), locations: locations.slice(),
     targetQualifiedCount, ...counters, savedCount, skippedCount, stoppedReason,
@@ -494,6 +578,10 @@ export async function runLeadListGeneration(opts) {
     industryBreakdown, diversityWarning,
     locationsRequested: locations.length, locationsSearched: locationsAttempted.size,
     locationBreakdown, geoDiversityWarning, geoConcentrationType,
+    industryDiscoveryFailure, locationDiscoveryFailure, discoveryFailureWarning,
+    buyerIntentDistribution, phoneReachabilityDistribution, businessReadinessDistribution,
+    intentDataSourceBreakdown, countPenalizedGatekeeper, countRejectedCentralizedPhone,
+    topBuyerIntentIndustries, topBuyerIntentLocations,
     // Filled in by the caller after auto-assignment runs (a separate step — see
     // LeadListsScreen.runAutoAssignment) via updateRunSummary(runId, {...}).
     assignedJaco: 0, assignedMarc: 0, assignedCameron: 0, unassignedQualified: 0,

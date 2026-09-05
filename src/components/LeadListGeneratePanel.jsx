@@ -151,6 +151,19 @@ export default function LeadListGeneratePanel({ onStart, onStop, isRunning, prog
           {lastSummary.geoDiversityWarning && (
             <p className={styles.warn}>{lastSummary.geoDiversityWarning}</p>
           )}
+          {lastSummary.discoveryFailureWarning && (
+            <p className={styles.warn}>{lastSummary.discoveryFailureWarning}</p>
+          )}
+          <p className={styles.summarySub}>
+            Web design buyer intent — Extreme: {lastSummary.buyerIntentDistribution?.EXTREME ?? 0},
+            High: {lastSummary.buyerIntentDistribution?.HIGH ?? 0},
+            Moderate: {lastSummary.buyerIntentDistribution?.MODERATE ?? 0},
+            Low: {lastSummary.buyerIntentDistribution?.LOW ?? 0}.
+            Phone reachability — Owner-likely: {lastSummary.phoneReachabilityDistribution?.DIRECT_OWNER_LIKELY ?? 0},
+            Local: {lastSummary.phoneReachabilityDistribution?.LOCAL_BUSINESS_LINE ?? 0},
+            Gatekeeper risk: {lastSummary.phoneReachabilityDistribution?.GATEKEEPER_RISK ?? 0},
+            Centralized: {lastSummary.phoneReachabilityDistribution?.CENTRALIZED_REJECT ?? 0}.
+          </p>
         </div>
       )}
     </div>

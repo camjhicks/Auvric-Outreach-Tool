@@ -3,23 +3,33 @@
 // comparator, so the same dataset produces the same order every time. No random
 // shuffling, no ad-hoc per-screen sorting.
 //
-// Campaign priority (ties fall through to the next key) — total Lead Score remains the
-// PRIMARY ranking factor; the remaining keys exist only to break ties intentionally:
-//   1. leadScore desc
-//   2. website-status priority: NO WEBSITE > VERIFIED BROKEN WEBSITE > (everything else,
-//      kept in a sensible order for Master Leads even though only those two are ever
-//      assignment-eligible this campaign)
-//   3. buyingPower (High > Moderate-High > Moderate > Unknown)
-//   4. businessActivity sub-score desc
-//   5. websiteImportance sub-score desc
-//   6. decisionMakerReachability sub-score desc
-//   7. reputation sub-score desc
-//   8. commercialIntent sub-score desc
-//   9. reviewCount desc
-//  10. businessName asc (stable tie-breaker)
-//  11. googlePlaceId asc (final technical tie-breaker)
+// Campaign priority (ties fall through to the next key), per the Buyer-Intent upgrade's
+// CALLER LIST SORTING spec — caller eligibility now outranks raw score, so an eligible
+// lead never sorts below a non-eligible one no matter how high the latter scored:
+//   1. assignment eligibility rank (ELIGIBLE > MANUAL_REVIEW > NOT_ELIGIBLE)
+//   1b. website-status priority within eligibility (NO WEBSITE > VERIFIED BROKEN >
+//       everything else) — preserves the pre-existing fine-grained ordering tested
+//       before this pass; genuinely a sub-key of "caller eligibility."
+//   2. Total Lead Quality — leadScore desc
+//   3. Web Design Buyer Intent Score desc
+//   4. Phone / Decision-Maker Reachability Score desc
+//   5. Business Readiness Score desc
+//   6. Website Need sub-score desc
+//   7. buyingPower (High > Moderate-High > Moderate > Unknown)
+//   8. businessActivity sub-score desc
+//   9. commercialIntent sub-score desc
+//  10. reputation sub-score desc
+//  11. reviewCount desc
+//  12. businessName asc (stable tie-breaker)
+//  13. googlePlaceId asc (final technical tie-breaker)
 
-import { WEBSITE_STATUS, BROKEN_VERIFICATION, BUYING_POWER_RANK } from '../config/leadListQualification.js'
+import { WEBSITE_STATUS, BROKEN_VERIFICATION, BUYING_POWER_RANK, ASSIGNMENT_ELIGIBILITY } from '../config/leadListQualification.js'
+
+const ELIGIBILITY_RANK = Object.freeze({
+  [ASSIGNMENT_ELIGIBILITY.ELIGIBLE]: 0,
+  [ASSIGNMENT_ELIGIBILITY.MANUAL_REVIEW]: 1,
+  [ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE]: 2,
+})
 
 // NO WEBSITE and VERIFIED BROKEN rank above everything else, per the current campaign's
 // locked eligibility — the rest keep a sensible relative order for Master Leads display.
@@ -58,14 +68,17 @@ function subScore(lead, factor) {
 /** Pure comparator implementing the full campaign priority hierarchy. */
 export function compareLeads(a, b) {
   return (
-    numDesc(a.leadScore, b.leadScore) ||
+    ((ELIGIBILITY_RANK[a.assignmentEligibility] ?? 99) - (ELIGIBILITY_RANK[b.assignmentEligibility] ?? 99)) ||
     (websitePriorityRank(a) - websitePriorityRank(b)) ||
+    numDesc(a.leadScore, b.leadScore) ||
+    numDesc(a.webDesignBuyerIntentScore, b.webDesignBuyerIntentScore) ||
+    numDesc(a.phoneReachabilityScore, b.phoneReachabilityScore) ||
+    numDesc(a.businessReadinessScore, b.businessReadinessScore) ||
+    numDesc(subScore(a, 'websiteNeed'), subScore(b, 'websiteNeed')) ||
     ((BUYING_POWER_RANK[a.estimatedBuyingPower ?? a.buyingPower] ?? 99) - (BUYING_POWER_RANK[b.estimatedBuyingPower ?? b.buyingPower] ?? 99)) ||
     numDesc(subScore(a, 'businessActivity'), subScore(b, 'businessActivity')) ||
-    numDesc(subScore(a, 'websiteImportance'), subScore(b, 'websiteImportance')) ||
-    numDesc(subScore(a, 'decisionMakerReachability'), subScore(b, 'decisionMakerReachability')) ||
-    numDesc(subScore(a, 'reputation'), subScore(b, 'reputation')) ||
     numDesc(subScore(a, 'commercialIntent'), subScore(b, 'commercialIntent')) ||
+    numDesc(subScore(a, 'reputation'), subScore(b, 'reputation')) ||
     numDesc(a.reviewCount, b.reviewCount) ||
     String(a.businessName ?? '').localeCompare(String(b.businessName ?? '')) ||
     String(a.googlePlaceId ?? '').localeCompare(String(b.googlePlaceId ?? ''))

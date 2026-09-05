@@ -25,6 +25,9 @@ import { evaluateChainRisk } from './qualification.js'
 import { CHAIN_RISK_LEVELS } from '../config/qualification.js'
 import { normalizePhoneDigits } from './leadIdentity.js'
 import { weakWebsiteNeedPoints, decentWebsiteNeedPoints } from './leadListWebsiteStatus.js'
+import { computeBuyerIntentScore } from './leadListIntent.js'
+import { computeBusinessReadiness } from './leadListReadiness.js'
+import { classifyPhoneReachability } from './leadListPhoneReachability.js'
 
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
 
@@ -275,6 +278,36 @@ function buildCallAngle(c) {
   return 'Decent website, but another strong signal makes this worth a call.'
 }
 
+// ---- Web Design Buyer Intent / Business Readiness / Phone Reachability (additive —
+// NEVER changes totalScore/tier; used only for sort tie-breaking and diagnostics). ---
+function computeIntentFields(c, industry) {
+  const ind = industry ?? {
+    id: c.industryId ?? null, label: c.category ?? 'Unknown industry',
+    serviceFamily: c.serviceFamily ?? 'home_services', highTicketWeight: c.highTicketWeight ?? 2,
+  }
+  const buyerIntent = computeBuyerIntentScore(c, ind)
+  const readiness = computeBusinessReadiness(c)
+  const phone = classifyPhoneReachability(c)
+  return { buyerIntent, readiness, phone }
+}
+
+// Evidence-based only — never claims an owner personally searched for anything; every
+// clause traces to an observed field or a documented category/market-level estimate.
+function buildWhyLookingForWebsite(c, intent) {
+  const parts = []
+  if (c.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY) parts.push('active/registered social profile, no website')
+  else if (c.websiteStatus === WEBSITE_STATUS.NONE) parts.push('no website')
+  else if (c.websiteStatus === WEBSITE_STATUS.BROKEN) parts.push('existing website is broken/unavailable to customers')
+  if (c.highTicketWeight === 3) parts.push('high-ticket service')
+  if (intent.buyerIntent.level === 'EXTREME' || intent.buyerIntent.level === 'HIGH') {
+    parts.push(`${intent.buyerIntent.level.toLowerCase()} web design buyer intent for this industry/market`)
+  }
+  if (intent.readiness.band === 'HIGH') parts.push('strong business readiness signals')
+  if (c.recentReviewActivity === 'Recent') parts.push('growing review activity')
+  if (intent.phone.type === 'DIRECT_OWNER_LIKELY') parts.push('owner-likely local phone')
+  return parts.length ? parts.join(', ') + '.' : 'Limited evidence of buyer readiness beyond the base qualification.'
+}
+
 // ---- Qualification guardrails (§13) — a high score can NEVER override these -----
 function evaluateGuardrails(c, factors, totalScore) {
   const codes = []
@@ -318,7 +351,7 @@ function evaluateGuardrails(c, factors, totalScore) {
  *   whyQualified, recommendedCallAngle, chainRiskLevel,
  * }}
  */
-export function scoreCandidate(candidate) {
+export function scoreCandidate(candidate, industry) {
   const c = candidate ?? {}
 
   // ---- Hard rejects (cheap, Places-only evidence — no scoring performed) ---------
@@ -332,6 +365,11 @@ export function scoreCandidate(candidate) {
       buyingPower: BUYING_POWER.UNKNOWN, estimatedCustomerValue: estimateCustomerValue(c),
       whyQualified: null, recommendedCallAngle: null, chainRiskLevel: hard.chainRiskLevel,
       assignmentEligibility: ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE,
+      webDesignBuyerIntentScore: null, webDesignBuyerIntentLevel: null, intentDataSource: null,
+      nicheWebDesignDemand: null, localWebDesignDemand: null, commercialWebDesignSearchIntent: null,
+      businessReadinessScore: null, businessReadinessBand: null,
+      phoneReachabilityScore: null, phoneReachabilityType: null, gatekeeperRisk: null,
+      growthSignals: null, marketingActivitySignals: null, whyLookingForWebsite: null,
     }
   }
 
@@ -348,6 +386,11 @@ export function scoreCandidate(candidate) {
   const scoreBreakdown = Object.entries(factors).map(([key, f]) => ({ factor: key, ...f }))
   const totalScore = Math.round(scoreBreakdown.reduce((sum, f) => sum + f.points, 0))
 
+  // Intent/readiness/phone fields are computed for every survivor of hard-reject (both
+  // guardrail-disregarded and qualified) — they're additive diagnostics, never inputs
+  // to totalScore/tier, so computing them here can never affect the funnel above.
+  const intent = computeIntentFields(withChain, industry)
+
   // ---- Qualification guardrails (§13) — evaluated even on a high score ----------
   const guard = evaluateGuardrails(withChain, factors, totalScore)
   if (guard.failed) {
@@ -359,6 +402,15 @@ export function scoreCandidate(candidate) {
       buyingPower: estimateBuyingPower(withChain), estimatedCustomerValue: estimateCustomerValue(withChain),
       whyQualified: null, recommendedCallAngle: null, chainRiskLevel: hard.chainRiskLevel,
       assignmentEligibility: ASSIGNMENT_ELIGIBILITY.NOT_ELIGIBLE,
+      webDesignBuyerIntentScore: intent.buyerIntent.score, webDesignBuyerIntentLevel: intent.buyerIntent.level,
+      intentDataSource: intent.buyerIntent.dataSource,
+      nicheWebDesignDemand: intent.buyerIntent.nicheWebDesignDemand, localWebDesignDemand: intent.buyerIntent.localWebDesignDemand,
+      commercialWebDesignSearchIntent: intent.buyerIntent.commercialWebDesignSearchIntent,
+      businessReadinessScore: intent.readiness.score, businessReadinessBand: intent.readiness.band,
+      phoneReachabilityScore: intent.phone.score, phoneReachabilityType: intent.phone.type, gatekeeperRisk: intent.phone.gatekeeperRisk,
+      growthSignals: withChain.recentReviewActivity === 'Recent' ? 'Recent review activity' : 'No recent growth signals detected',
+      marketingActivitySignals: withChain.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY ? 'Registered social-media presence (no website)' : 'None detected',
+      whyLookingForWebsite: null,
     }
   }
 
@@ -376,5 +428,14 @@ export function scoreCandidate(candidate) {
     recommendedCallAngle: buildCallAngle(withChain),
     chainRiskLevel: hard.chainRiskLevel,
     assignmentEligibility: computeAssignmentEligibility(withChain),
+    webDesignBuyerIntentScore: intent.buyerIntent.score, webDesignBuyerIntentLevel: intent.buyerIntent.level,
+    intentDataSource: intent.buyerIntent.dataSource,
+    nicheWebDesignDemand: intent.buyerIntent.nicheWebDesignDemand, localWebDesignDemand: intent.buyerIntent.localWebDesignDemand,
+    commercialWebDesignSearchIntent: intent.buyerIntent.commercialWebDesignSearchIntent,
+    businessReadinessScore: intent.readiness.score, businessReadinessBand: intent.readiness.band,
+    phoneReachabilityScore: intent.phone.score, phoneReachabilityType: intent.phone.type, gatekeeperRisk: intent.phone.gatekeeperRisk,
+    growthSignals: withChain.recentReviewActivity === 'Recent' ? 'Recent review activity' : 'No recent growth signals detected',
+    marketingActivitySignals: withChain.websiteStatus === WEBSITE_STATUS.SOCIAL_ONLY ? 'Registered social-media presence (no website)' : 'None detected',
+    whyLookingForWebsite: buildWhyLookingForWebsite(withChain, intent),
   }
 }

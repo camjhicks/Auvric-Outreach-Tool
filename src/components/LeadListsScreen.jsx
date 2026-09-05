@@ -228,6 +228,15 @@ export default function LeadListsScreen({ onBack }) {
                     <th>Diversity Warning</th>
                     <th>Top Locations (raw / qualified / assigned)</th>
                     <th>Geographic Concentration</th>
+                    <th>Discovery Failure</th>
+                    <th>Buyer Intent (Extreme/High/Moderate/Low)</th>
+                    <th>Phone Reachability (Owner/Local/Gatekeeper/Centralized)</th>
+                    <th>Readiness (High/Moderate/Low)</th>
+                    <th>Top Buyer-Intent Industries</th>
+                    <th>Top Buyer-Intent Locations</th>
+                    <th>Gatekeeper Penalized</th>
+                    <th>Centralized Phone Rejected</th>
+                    <th>Intent Data Source</th>
                     <th>Not Assigned Because</th>
                     <th>Top Disregard Reasons</th><th>Stopped</th>
                   </tr>
@@ -249,6 +258,12 @@ export default function LeadListsScreen({ onBack }) {
                     const geoWarningLabel = r.geoDiversityWarning
                       ? `${r.geoConcentrationType === 'DISCOVERY_GAP' ? 'Discovery gap' : 'Market outcome'}: ${r.geoDiversityWarning}`
                       : '—'
+                    const bi = r.buyerIntentDistribution ?? {}
+                    const pr = r.phoneReachabilityDistribution ?? {}
+                    const rb = r.businessReadinessDistribution ?? {}
+                    const topBiIndustries = (r.topBuyerIntentIndustries ?? []).map(x => `${x.label}: ${x.avgBuyerIntent}`).join(', ')
+                    const topBiLocations = (r.topBuyerIntentLocations ?? []).map(x => `${x.location}: ${x.avgBuyerIntent}`).join(', ')
+                    const intentSource = Object.entries(r.intentDataSourceBreakdown ?? {}).map(([s, n]) => `${n} ${s}`).join(', ')
                     return (
                       <tr key={r.id}>
                         <td>{new Date(r.createdAt).toLocaleString()}</td>
@@ -282,6 +297,15 @@ export default function LeadListsScreen({ onBack }) {
                         <td className={styles.reasonsCell}>{r.diversityWarning || '—'}</td>
                         <td className={styles.reasonsCell} title={topLocations}>{topLocations || '—'}</td>
                         <td className={styles.reasonsCell} title={r.geoDiversityWarning ?? ''}>{geoWarningLabel}</td>
+                        <td className={styles.reasonsCell}>{r.discoveryFailureWarning || '—'}</td>
+                        <td>{bi.EXTREME ?? 0}/{bi.HIGH ?? 0}/{bi.MODERATE ?? 0}/{bi.LOW ?? 0}</td>
+                        <td>{pr.DIRECT_OWNER_LIKELY ?? 0}/{pr.LOCAL_BUSINESS_LINE ?? 0}/{pr.GATEKEEPER_RISK ?? 0}/{pr.CENTRALIZED_REJECT ?? 0}</td>
+                        <td>{rb.HIGH ?? 0}/{rb.MODERATE ?? 0}/{rb.LOW ?? 0}</td>
+                        <td className={styles.reasonsCell} title={topBiIndustries}>{topBiIndustries || '—'}</td>
+                        <td className={styles.reasonsCell} title={topBiLocations}>{topBiLocations || '—'}</td>
+                        <td>{r.countPenalizedGatekeeper ?? 0}</td>
+                        <td>{r.countRejectedCentralizedPhone ?? 0}</td>
+                        <td className={styles.reasonsCell} title={intentSource}>{intentSource || '—'}</td>
                         <td className={styles.reasonsCell} title={notAssigned}>{notAssigned || '—'}</td>
                         <td className={styles.reasonsCell} title={topReasons}>{topReasons || '—'}</td>
                         <td>{r.stoppedReason?.replace(/_/g, ' ')}</td>
